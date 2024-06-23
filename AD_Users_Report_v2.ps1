@@ -511,7 +511,6 @@ Try {
         # Format the file name with the domain name
         $FileName = "C:\Temp\$($domainName)_Users_Report_$TimeStamp.xlsx"
 
-        
         # Export the sorted collection to a file and passthru to the XLSX variable to continue processing it
         $XLSX = $SortedCollection | Export-Excel $FileName -WorksheetName "AD Users" -AutoSize -FreezeTopRowFirstColumn -AutoFilter -BoldTopRow -PassThru
         # Select the AD Users worksheet we just saved to the workbook
