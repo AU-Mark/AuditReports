@@ -363,7 +363,7 @@ Try {
         # Select the AD Users worksheet we just saved to the workbook
         $Worksheet = $XLSX.Workbook.Worksheets["AD Users"]
         # Variable to represent the bottom of a column
-        $lastCol = $Worksheet.Dimension.End.Column
+        $lastCol = $Worksheet.Dimension.End.Row
         # Set the font sizw to 8 for the whole document
         Set-ExcelRange -Worksheet $Worksheet -Range "A:Z" -FontSize 8
         # Autosize the columns again after changing the font size
@@ -410,7 +410,7 @@ Try {
             # DomainAdmin
             Add-ConditionalFormatting -WorkSheet $Worksheet -address "H2:H$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
             # PasswordLastSet
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "I2:I$lastCol" -RuleType Expression -ConditionValue "=`$I2<=(TODAY()-90)" -BackgroundColor Yellow -Bold
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "I2:I$lastCol" -RuleType Expression -ConditionValue "=`$I2<=(TODAY()-90)" -BackgroundColor Red -Bold
             # LastLogonDate
             Add-ConditionalFormatting -WorkSheet $Worksheet -address "J2:J$lastCol" -RuleType Expression -ConditionValue "=`$J2<=(TODAY()-180)" -BackgroundColor Red -Bold
             # LastLogonDate
