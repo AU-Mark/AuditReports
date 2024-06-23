@@ -138,6 +138,8 @@ Function Check-Entra {
                                 Write-Host -ForegroundColor Green "Microsoft.Graph installed successfully. It will be removed after running this script."
                                 Import-Module Microsoft.Graph.Users
                                 Import-Module Microsoft.Graph.DirectoryObjects
+                                #TODO Finish adding the rest of the import module statements
+
                                 $GraphAPI = $True
                                 $RemoveGraphAPI = $True
                             } Catch {
@@ -163,7 +165,7 @@ Function Check-Entra {
 
             If ($GraphAPI) {
                 Try {
-                Connect-MgGraph -Scopes 'Directory.Read.All, User.Read.All, AuditLog.Read.All' -NoWelcome -ErrorAction Stop
+                    Connect-MgGraph -Scopes 'Directory.Read.All, User.Read.All, AuditLog.Read.All' -NoWelcome -ErrorAction Stop
                     Try {
                         $AzUsers = Get-MgUser -All -Property Id, UserPrincipalName, SignInActivity, OnPremisesSyncEnabled, displayName, samAccountName, AccountEnabled, mail, lastPasswordChangeDateTime, PasswordPolicies, CreatedDateTime -ErrorAction Stop
                         $PremiumEntraLicense = $True
@@ -271,18 +273,7 @@ Function Check-ADUsers {
                     Resolution = ""
                 }
             } Else {
-                ForEach ($AzUser in $AzUsers) {
-                    # On-Prem user with synced cloud user
-                    If (($Users).UserPrincipalName -contains $AzUser.UserPrincipalName) {
-                        If ($User.UserPrincipalName -eq $AzUser.UserPrincipalName) {
-                            $AzUsersToProcess += $AzUser.UserPrincipalName
-                        }
-            
-                    # Cloud only user
-                    } Else {
-                        $AzUsersToProcess += $AzUser.UserPrincipalName
-                    }
-                }
+                $AzUsersToProcess += $User.UserPrincipalName
             }
         } Else {
             $UserCollection += [PSCustomObject]@{
@@ -325,66 +316,63 @@ Function Check-AzUsers {
     # Initialize user counter for progress bar
     $Count = 1
 
-    ForEach ($AzUserObject in $AzUsersToProcess) {
-        $User = $ADUsers | Where-Object {$_.UserPrincipalName -eq $AzUserObject}
-        $AzUser =  $AZUsers | Where-Object {$_.UserPrincipalName -eq $AzUserObject}
-        
+    ForEach ($AzUser in $AzUsers) {
+        Write-Progress -Id 1 -Activity "Processing AAD Users" -Status "Current Count: ($Count/$($AzUsers.Count))" -PercentComplete (($Count / $AzUsers.Count) * 100) -CurrentOperation "Processing... $($AzUser.DisplayName)"
+
         # On-Prem user with synced cloud user
-        If (($ADUsers).UserPrincipalName -contains $AzUserObject) {
-            Write-Progress -Id 1 -Activity "Processing AAD Users" -Status "Current Count: ($Count/$($AzUsersToProcess.Count))" -PercentComplete (($Count / $AzUsersToProcess.Count) * 100) -CurrentOperation "Processing... $($AzUser.DisplayName)"
+        If ($AzUsersToProcess -contains $AzUser.UserPrincipalName) {
+            $User = $ADUsers | Where-Object {$_.UserPrincipalName -eq $AzUser.UserPrincipalName}
 
-            If ($User.UserPrincipalName -eq $AzUserObject) {
-                # Check if user is a global admin in Entra ID
-                If (($GlobalAdminMembers).UserPrincipalName -contains $AzUser.UserPrincipalName) {
-                    $GlobalAdmin = $True
-                } Else {
-                    $GlobalAdmin = $False
-                }
+            # Check if user is a global admin in Entra ID
+            If (($GlobalAdminMembers).UserPrincipalName -contains $AzUser.UserPrincipalName) {
+                $GlobalAdmin = $True
+            } Else {
+                $GlobalAdmin = $False
+            }
 
-                #TODO Compare last sign-in date from AD and Graph and use the latest sign-in date
-                If ($PremiumEntraLicense) {
-                    If ($AzUser.signInActivity.lastSignInDateTime) { 
-                        $AzlastLogonDate = [DateTime]$AzUser.signInActivity.lastSignInDateTime
-                        If ($User.lastLogonDate -lt $AzlastLogonDate) {
-                            $LastLogonDate = $AzlastLogonDate
-                        } Else {
-                            $LastLogonDate = $User.lastLogonDate
-                        }
+            #TODO Compare last sign-in date from AD and Graph and use the latest sign-in date
+            If ($PremiumEntraLicense) {
+                If ($AzUser.signInActivity.lastSignInDateTime) { 
+                    $AzlastLogonDate = [DateTime]$AzUser.signInActivity.lastSignInDateTime
+                    If ($User.lastLogonDate -lt $AzlastLogonDate) {
+                        $LastLogonDate = $AzlastLogonDate
                     } Else {
                         $LastLogonDate = $User.lastLogonDate
                     }
                 } Else {
                     $LastLogonDate = $User.lastLogonDate
                 }
-                
-                $UserCollection += [PSCustomObject]@{
-                    "Name" = $User.displayName
-                    SamAccountName = $User.samAccountName
-                    UserPrincipalName = $User.userPrincipalName
-                    "Email Address" = $User.mail
-                    Enabled = $User.enabled
-                    AccountExpiredDate = $AccountExpired
-                    EnterpriseAdmin = $EnterpriseAdmin
-                    DomainAdmin = $DomainAdmin
-                    "AzGlobalAdmin" = $GlobalAdmin
-                    PasswordLastSet = $User.passwordLastSet
-                    LastLogonDate = $LastLogonDate
-                    PasswordNeverExpires = $User.passwordNeverExpires
-                    PasswordExpired = $User.passwordExpired
-                    "Account Locked" = $User.lockedOut
-                    CannotChangePassword = $User.cannotChangePassword
-                    "Date Created" = $User.whenCreated
-                    Notes = ""
-                    Action = ""
-                    "Follow Up" = ""
-                    Resolution = ""
-                }
+            } Else {
+                $LastLogonDate = $User.lastLogonDate
+            }
+            
+            $UserCollection += [PSCustomObject]@{
+                "Name" = $User.displayName
+                SamAccountName = $User.samAccountName
+                UserPrincipalName = $User.userPrincipalName
+                "Email Address" = $User.mail
+                Enabled = $User.enabled
+                AccountExpiredDate = $AccountExpired
+                EnterpriseAdmin = $EnterpriseAdmin
+                DomainAdmin = $DomainAdmin
+                "AzGlobalAdmin" = $GlobalAdmin
+                PasswordLastSet = $User.passwordLastSet
+                LastLogonDate = $LastLogonDate
+                PasswordNeverExpires = $User.passwordNeverExpires
+                PasswordExpired = $User.passwordExpired
+                "Account Locked" = $User.lockedOut
+                CannotChangePassword = $User.cannotChangePassword
+                "Date Created" = $User.whenCreated
+                Notes = ""
+                Action = ""
+                "Follow Up" = ""
+                Resolution = ""
             }
 
         # Cloud only user
         } Else {
             # Check if user is a global admin in Entra ID
-            If (($GlobalAdminMembers).UserPrincipalName -contains $User.UserPrincipalName) {
+            If (($GlobalAdminMembers).UserPrincipalName -contains $AzUser.UserPrincipalName) {
                 $GlobalAdmin = $True
             } Else {
                 $GlobalAdmin = $False
