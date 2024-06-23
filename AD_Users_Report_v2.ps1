@@ -70,90 +70,95 @@ Try {
                     $ImportExcel = $False
                 }
             }
+        } Else {
+            Write-Host -ForegroundColor Yellow "If allowed to install PowerShell modules on this system you can run this script in an admin session to install the ImportExcel module and save directly to xlsx with formatting"
+        }
+    }
 
-            $EntraID = Read-Host "Would you like to connect to Entra ID? (Y/N)"
-            Switch ($EntraID) {
-                'Y' { 
-                    If (Get-Module -ListAvailable -Name 'Microsoft.Graph') {
-                        Write-Host -ForegroundColor Yellow "Microsoft.Graph module detected. Connecting to Graph API..."
-                
-                        # Import the ImportExcel module and set the $ImportExcel variable to True
-                        Import-Module Microsoft.Graph.Users
-                        Import-Module Microsoft.Graph.Groups
-                        Import-Module Microsoft.Graph.DirectoryObjects
-                        $GraphAPI = $True
-                        $RemoveGraphAPI = $False
-                    } Else {
-                        # Graph API module is not installed. Ask if allowed to install and user wants to install it.
-                        Write-Warning 'Graph API module is not installed. Without it the report will display on-premises AD Users only.'
-                        $InstallGraph = Read-Host 'If allowed to install modules on this system, would you like to temporarily install it for this script? (Y/N)'
-            
-                        Switch ($InstallGraph) {
-                            "Y" {
-                                Try {
-                                    Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-                                    If ((Get-PackageProvider).Name -notcontains "NuGet") {
-                                        Install-PackageProvider -Name NuGet -Force
-                                        $RemoveNuGet = $True
-                                    } Else {
-                                        $RemoveNuGet = $False
-                                    }
-                                    Install-Module -Name 'Microsoft.Graph'-Force
-                                    Write-Host -ForegroundColor Green "Microsoft.Graph installed successfully. It will be removed after running this script."
-                                    $GraphAPI = $True
-                                    $RemoveGraphAPI = $True
-                                } Catch {
-                                    Write-Error "Graph API module failed to install. See the error below. The report will include on-premises AD users only until the error is corrected. The Graph API module will be uninstalled at the end of this script"
-                                    Write-Error "Err Line: $($_.InvocationInfo.ScriptLineNumber) Err Name: $($_.Exception.GetType().FullName) Err Msg: $($_.Exception.Message)"
-                                    $GraphAPI = $False
-                                    $RemoveGraphAPI = $True
-                                }
-                            }
-                            "N" {
-                                Write-Host -ForegroundColor Yellow "Graph API will not be installed. Report will show on-premises AD users only."
-                                $GraphAPI = $False
-                            }
-                            Default { 
-                                Write-Host -ForegroundColor Yellow "No option was selected. Graph API will not be installed. Report will show on-premises AD users only."
-                                $GraphAPI = $False
-                            }
-                        }
-                    }
-
-                    If ($GraphAPI) {
-                        Try {
-                        Connect-MgGraph -Scopes 'Directory.Read.All, User.Read.All, Group.Read.All, AuditLog.Read.All' -NoWelcome -ErrorAction Stop
+    $EntraID = Read-Host "Would you like to connect to Entra ID? (Y/N)"
+    Switch ($EntraID) {
+        'Y' { 
+            If (Get-Module -ListAvailable -Name 'Microsoft.Graph') {
+                Write-Host -ForegroundColor Yellow "Microsoft.Graph module detected. Connecting to Graph API..."
+        
+                # Import the ImportExcel module and set the $ImportExcel variable to True
+                Import-Module Microsoft.Graph.Users
+                Import-Module Microsoft.Graph.DirectoryObjects
+                $GraphAPI = $True
+                $RemoveGraphAPI = $False
+            } Else {
+                If ($AdminSession) {
+                    # Graph API module is not installed. Ask if allowed to install and user wants to install it.
+                    Write-Warning 'Graph API module is not installed. Without it the report will display on-premises AD Users only.'
+                    $InstallGraph = Read-Host 'If allowed to install modules on this system, would you like to temporarily install it for this script? (Y/N)'
+        
+                    Switch ($InstallGraph) {
+                        "Y" {
                             Try {
-                                $AzUsers = Get-MgUser -All -Property Id, UserPrincipalName, SignInActivity, OnPremisesSyncEnabled, displayName, samAccountName, AccountEnabled, mail, lastPasswordChangeDateTime, PasswordPolicies, CreatedDateTime -ErrorAction Stop
-                                $PremiumEntraLicense = $True
-                            } Catch {
-                                If ($_.Exception.Message -like "*Neither tenant is B2C or tenant doesn't have premium license*") {
-                                    $AzUsers = Get-MgUser -All -Property Id, UserPrincipalName, OnPremisesSyncEnabled, displayName, samAccountName, AccountEnabled, mail, lastPasswordChangeDateTime, PasswordPolicies, CreatedDateTime -ErrorAction Stop
-                                    $PremiumEntraLicense = $False
+                                Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+                                If ((Get-PackageProvider).Name -notcontains "NuGet") {
+                                    Install-PackageProvider -Name NuGet -Force
+                                    $RemoveNuGet = $True
+                                } Else {
+                                    $RemoveNuGet = $False
                                 }
+                                Install-Module -Name 'Microsoft.Graph'-Force
+                                Write-Host -ForegroundColor Green "Microsoft.Graph installed successfully. It will be removed after running this script."
+                                Import-Module Microsoft.Graph.Users
+                                Import-Module Microsoft.Graph.DirectoryObjects
+                                $GraphAPI = $True
+                                $RemoveGraphAPI = $True
+                            } Catch {
+                                Write-Error "Graph API module failed to install. See the error below. The report will include on-premises AD users only until the error is corrected. The Graph API module will be uninstalled at the end of this script"
+                                Write-Error "Err Line: $($_.InvocationInfo.ScriptLineNumber) Err Name: $($_.Exception.GetType().FullName) Err Msg: $($_.Exception.Message)"
+                                $GraphAPI = $False
+                                $RemoveGraphAPI = $True
                             }
-
-                            $GlobalAdminRoleId = Get-MgDirectoryRole | Where-Object {$_.DisplayName -eq "Global Administrator"} | Select-Object -ExpandProperty ID
-                            $GlobalAdminMembers = Get-MgDirectoryRoleMemberAsUser -DirectoryRoleId $GlobalAdminRoleId
-                            $Entra = $True
-                        } Catch {
-                            Write-Warning "Connection to Graph API failed. Report will show on-premises AD users only."
-                            $Entra = $False
                         }
-                    } Else {
-                        Write-Warning "Connection to Graph API failed. Report will show on-premises AD users only."
-                        $Entra = $False
+                        "N" {
+                            Write-Host -ForegroundColor Yellow "Graph API will not be installed. Report will show on-premises AD users only."
+                            $GraphAPI = $False
+                        }
+                        Default { 
+                            Write-Host -ForegroundColor Yellow "No option was selected. Graph API will not be installed. Report will show on-premises AD users only."
+                            $GraphAPI = $False
+                        }
                     }
-                }
-                'N' {
-                    $Entra = $False
-                }
-                Default {
-                    $Entra = $False
+                } Else {
+                    Write-Host -ForegroundColor Yellow "If allowed to install PowerShell modules on this system you can run this script in an admin session to install the Graph API and run the audit against cloud users and combine cloud properties with on-prem properties"
                 }
             }
-        } Else {
-            Write-Host -ForegroundColor Yellow "If allowed to install PowerShell modules on this system you can run this script in an admin session to install the Graph API and ImportExcel modules and save directly to xlsx with formatting"
+
+            If ($GraphAPI) {
+                Try {
+                Connect-MgGraph -Scopes 'Directory.Read.All, User.Read.All, AuditLog.Read.All' -NoWelcome -ErrorAction Stop
+                    Try {
+                        $AzUsers = Get-MgUser -All -Property Id, UserPrincipalName, SignInActivity, OnPremisesSyncEnabled, displayName, samAccountName, AccountEnabled, mail, lastPasswordChangeDateTime, PasswordPolicies, CreatedDateTime -ErrorAction Stop
+                        $PremiumEntraLicense = $True
+                    } Catch {
+                        If ($_.Exception.Message -like "*Neither tenant is B2C or tenant doesn't have premium license*") {
+                            $AzUsers = Get-MgUser -All -Property Id, UserPrincipalName, OnPremisesSyncEnabled, displayName, samAccountName, AccountEnabled, mail, lastPasswordChangeDateTime, PasswordPolicies, CreatedDateTime -ErrorAction Stop
+                            $PremiumEntraLicense = $False
+                        }
+                    }
+
+                    $GlobalAdminRoleId = Get-MgDirectoryRole | Where-Object {$_.DisplayName -eq "Global Administrator"} | Select-Object -ExpandProperty ID
+                    $GlobalAdminMembers = Get-MgDirectoryRoleMemberAsUser -DirectoryRoleId $GlobalAdminRoleId
+                    $Entra = $True
+                } Catch {
+                    Write-Warning "Connection to Graph API failed. Report will show on-premises AD users only."
+                    $Entra = $False
+                }
+            } Else {
+                Write-Warning "Connection to Graph API failed. Report will show on-premises AD users only."
+                $Entra = $False
+            }
+        }
+        'N' {
+            $Entra = $False
+        }
+        Default {
+            $Entra = $False
         }
     }
 
