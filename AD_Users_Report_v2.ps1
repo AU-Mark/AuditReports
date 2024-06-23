@@ -440,7 +440,7 @@ Function Check-AzUsers {
                 SamAccountName = "N/A"
                 UserPrincipalName = $AzUser.userPrincipalName
                 "Email Address" = $Mail
-                $UserType = "Cloud"
+                "User Type" = "Cloud"
                 Enabled = $AzUser.AccountEnabled
                 AccountExpiredDate = "N/A"
                 EnterpriseAdmin = $False
