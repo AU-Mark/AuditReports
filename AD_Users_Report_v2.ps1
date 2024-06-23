@@ -1,4 +1,5 @@
 # AD User Audit Report
+Clear-Host
 
 # Check if powershell is running in an admin session
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -293,51 +294,53 @@ Try {
             } Else {
                 ForEach ($AzUser in $AzUsers) {
                     # On-Prem user with synced cloud user
-                    If (($User).UserPrincipalName -contains $AzUser.UserPrincipalName) {
-                        # Check if user is a global admin in Entra ID
-                        If (($GlobalAdminMembers).UserPrincipalName -contains $AzUser.UserPrincipalName) {
-                            $GlobalAdmin = $True
-                        } Else {
-                            $GlobalAdmin = $False
-                        }
+                    If (($Users).UserPrincipalName -contains $AzUser.UserPrincipalName) {
+                        If ($User.UserPrincipalName -eq $AzUser.UserPrincipalName) {
+                            # Check if user is a global admin in Entra ID
+                            If (($GlobalAdminMembers).UserPrincipalName -contains $AzUser.UserPrincipalName) {
+                                $GlobalAdmin = $True
+                            } Else {
+                                $GlobalAdmin = $False
+                            }
 
-                        #TODO Compare last sign-in date from AD and Graph and use the latest sign-in date
-                        If ($PremiumEntraLicense) {
-                            If ($AzUser.signInActivity.lastSignInDateTime) { 
-                                $AzlastLogonDate = [DateTime]$AzUser.signInActivity.lastSignInDateTime
-                                If ($User.lastLogonDate -lt $AzlastLogonDate) {
-                                    $LastLogonDate = $AzlastLogonDate
+                            #TODO Compare last sign-in date from AD and Graph and use the latest sign-in date
+                            If ($PremiumEntraLicense) {
+                                If ($AzUser.signInActivity.lastSignInDateTime) { 
+                                    $AzlastLogonDate = [DateTime]$AzUser.signInActivity.lastSignInDateTime
+                                    If ($User.lastLogonDate -lt $AzlastLogonDate) {
+                                        $LastLogonDate = $AzlastLogonDate
+                                    } Else {
+                                        $LastLogonDate = $User.lastLogonDate
+                                    }
                                 } Else {
                                     $LastLogonDate = $User.lastLogonDate
                                 }
                             } Else {
                                 $LastLogonDate = $User.lastLogonDate
                             }
-                        } Else {
-                            $LastLogonDate = $User.lastLogonDate
-                        }
-                        
-                        $UserCollection += [PSCustomObject]@{
-                            "Name" = $User.displayName
-                            SamAccountName = $User.samAccountName
-                            UserPrincipalName = $User.userPrincipalName
-                            "Email Address" = $User.mail
-                            Enabled = $User.enabled
-                            AccountExpiredDate = $AccountExpired
-                            EnterpriseAdmin = $EnterpriseAdmin
-                            DomainAdmin = $DomainAdmin
-                            "AzGlobalAdmin" = $GlobalAdmin
-                            PasswordLastSet = $User.passwordLastSet
-                            LastLogonDate = $LastLogonDate
-                            PasswordNeverExpires = $User.passwordNeverExpires
-                            PasswordExpired = $User.passwordExpired
-                            "Account Locked" = $User.lockedOut
-                            CannotChangePassword = $User.cannotChangePassword
-                            "Date Created" = $User.whenCreated
-                            Notes = ""
-                            Action = ""
-                            "Follow Up" = ""
-                            Resolution = ""
+                            
+                            $UserCollection += [PSCustomObject]@{
+                                "Name" = $User.displayName
+                                SamAccountName = $User.samAccountName
+                                UserPrincipalName = $User.userPrincipalName
+                                "Email Address" = $User.mail
+                                Enabled = $User.enabled
+                                AccountExpiredDate = $AccountExpired
+                                EnterpriseAdmin = $EnterpriseAdmin
+                                DomainAdmin = $DomainAdmin
+                                "AzGlobalAdmin" = $GlobalAdmin
+                                PasswordLastSet = $User.passwordLastSet
+                                LastLogonDate = $LastLogonDate
+                                PasswordNeverExpires = $User.passwordNeverExpires
+                                PasswordExpired = $User.passwordExpired
+                                "Account Locked" = $User.lockedOut
+                                CannotChangePassword = $User.cannotChangePassword
+                                "Date Created" = $User.whenCreated
+                                Notes = ""
+                                Action = ""
+                                "Follow Up" = ""
+                                Resolution = ""
+                            }
                         }
 
                     # Cloud only user
@@ -519,6 +522,9 @@ Try {
     }
 
     If ($RemoveGraphAPI) {
+        Remove-Module -Name 'Microsoft.Graph.Users'
+        Remove-Module -Name 'Microsoft.Graph.DirectoryObjects'
+        Remove-Module -Name 'Microsoft.Graph.Authentication'
         Uninstall-Module -Name 'Microsoft.Graph' -Force
     }
 
