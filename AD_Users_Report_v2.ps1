@@ -247,6 +247,12 @@ Function Check-ADUsers {
             $AccountExpired = $Null
         }
 
+        If ($Null -eq $User.mail) {
+            $Mail = " "
+        } Else {
+            $Mail = $User.mail
+        }
+
         If ($Entra) {
             # On-prem user without synced cloud user
             If (($AzUsers).UserPrincipalName -notcontains $User.UserPrincipalName) {
@@ -254,7 +260,8 @@ Function Check-ADUsers {
                     "Name" = $User.displayName
                     SamAccountName = $User.samAccountName
                     UserPrincipalName = $User.userPrincipalName
-                    "Email Address" = $User.mail
+                    "Email Address" = $Mail
+                    "User Type" = "On-Prem"
                     Enabled = $User.enabled
                     AccountExpiredDate = $AccountExpired
                     EnterpriseAdmin = $EnterpriseAdmin
@@ -280,7 +287,8 @@ Function Check-ADUsers {
                 "Name" = $User.displayName
                 SamAccountName = $User.samAccountName
                 UserPrincipalName = $User.userPrincipalName
-                "Email Address" = $User.mail
+                "Email Address" = $Mail
+                "User Type" = "On-Prem"
                 Enabled = $User.enabled
                 AccountExpiredDate = $AccountExpired
                 EnterpriseAdmin = $EnterpriseAdmin
@@ -323,11 +331,37 @@ Function Check-AzUsers {
         If ($AzUsersToProcess -contains $AzUser.UserPrincipalName) {
             $User = $ADUsers | Where-Object {$_.UserPrincipalName -eq $AzUser.UserPrincipalName}
 
+            # Check the users samAccountName against the list of Admin Users to verify if they are a domain admin
+            If (($EnterpriseAdmins.SamAccountName) -contains $User.samAccountName) {
+                $EnterpriseAdmin = $True
+            } Else {
+                $EnterpriseAdmin = $False
+            }
+
+            # Check the users samAccountName against the list of Admin Users to verify if they are a domain admin
+            If (($DomainAdmins.SamAccountName) -contains $User.samAccountName) {
+                $DomainAdmin = $True
+            } Else {
+                $DomainAdmin = $False
+            }
+
+            If ($Null -ne $User.AccountExpirationDate) {
+                $AccountExpired = $User.AccountExpirationDate
+            } Else {
+                $AccountExpired = $Null
+            }
+
             # Check if user is a global admin in Entra ID
             If (($GlobalAdminMembers).UserPrincipalName -contains $AzUser.UserPrincipalName) {
                 $GlobalAdmin = $True
             } Else {
                 $GlobalAdmin = $False
+            }
+
+            If ($Null -eq $User.mail) {
+                $Mail = " "
+            } Else {
+                $Mail = $User.mail
             }
 
             #TODO Compare last sign-in date from AD and Graph and use the latest sign-in date
@@ -350,7 +384,8 @@ Function Check-AzUsers {
                 "Name" = $User.displayName
                 SamAccountName = $User.samAccountName
                 UserPrincipalName = $User.userPrincipalName
-                "Email Address" = $User.mail
+                "Email Address" = $Mail
+                "User Type" = "Hybrid"
                 Enabled = $User.enabled
                 AccountExpiredDate = $AccountExpired
                 EnterpriseAdmin = $EnterpriseAdmin
@@ -394,13 +429,20 @@ Function Check-AzUsers {
                 $PasswordNeverExpires = $False
             }
 
+            If ($Null -eq $AzUser.mail) {
+                $Mail = " "
+            } Else {
+                $Mail = $AzUser.mail
+            }
+
             $UserCollection += [PSCustomObject]@{
                 "Name" = $AzUser.displayName
-                SamAccountName = $AzUser.samAccountName
+                SamAccountName = "N/A"
                 UserPrincipalName = $AzUser.userPrincipalName
-                "Email Address" = $AzUser.mail
+                "Email Address" = $Mail
+                $UserType = "Cloud"
                 Enabled = $AzUser.AccountEnabled
-                AccountExpiredDate = $Null
+                AccountExpiredDate = "N/A"
                 EnterpriseAdmin = $False
                 DomainAdmin = $False
                 "AzGlobalAdmin" = $GlobalAdmin
@@ -459,8 +501,8 @@ Try {
     # If Entra is enabled, process hybrid and cloud only users and merge LastLogonDate for hybrid users.
     $UserCollection = Check-AzUsers -ADUsers $ADUsers -AzUsers $AzUsers -AzUsersToProcess $AzUsersToProcess -UserCollection $ProcessedADUsers
 
-    # Sort the user collection by samAccountName. We have to sort before we export to Excel if we want the table sorted a specific way.
-    $SortedCollection = $UserCollection | Sort-Object -Property samAccountName -Descending
+    # Sort the user collection by DisplayName. We have to sort before we export to Excel if we want the table sorted a specific way.
+    $SortedCollection = $UserCollection | Sort-Object -Property Name
 
     # Timestamp for Filename
     $TimeStamp = Get-Date -Format "MMddyyyy_HHmm"
@@ -484,17 +526,43 @@ Try {
         If ($Entra) {
             # Add conditional formatting to the data in the columns
             # Enabled Column
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "E2:E$lastCol" -RuleType Equal -ConditionValue $False -BackgroundColor Yellow
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "F2:F$lastCol" -RuleType Equal -ConditionValue $False -BackgroundColor Yellow
             # AccountExpired
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "F2:F$lastCol" -RuleType NotContainsBlanks -BackgroundColor Yellow
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "G2:G$lastCol" -RuleType NotContainsBlanks -BackgroundColor Yellow
             # Enterprise Admin
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "G2:G$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
-            # Domain Admin
             Add-ConditionalFormatting -WorkSheet $Worksheet -address "H2:H$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
+            # Domain Admin
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "I2:I$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
             # Global Admin
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "J2:J$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
+            # PasswordLastSet
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "K2:K$lastCol" -RuleType Expression -ConditionValue "=`$K2<=(TODAY()-90)" -BackgroundColor Yellow -Bold
+            # LastLogonDate
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "L2:L$lastCol" -RuleType Expression -ConditionValue "=`$L2<=(TODAY()-180)" -BackgroundColor Red -Bold
+            # LastLogonDate
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "L2:L$lastCol" -RuleType Expression -ConditionValue "=`=AND(`$L2 > TODAY()-180, `$L2 < TODAY()-90)" -BackgroundColor Yellow 
+            # LastLogonDate
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "L2:L$lastCol" -RuleType Expression -ConditionValue "=`$L2>=(TODAY()-90)" -BackgroundColor LightGreen
+            # PasswordNeverExpires
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "M2:M$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Red -Bold
+            # PasswordExpired
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "N2:N$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
+            # Account Locked
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "O2:O$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
+            # CannotChangePassword
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "P2:P$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
+        } Else {
+            # Add conditional formatting to the data in the columns
+            # Enabled Column
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "F2:F$lastCol" -RuleType Equal -ConditionValue $False -BackgroundColor Yellow
+            # AccountExpired
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "G2:G$lastCol" -RuleType NotContainsBlanks -BackgroundColor Yellow
+            # Enterprise Admin
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "H2:H$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
+            # DomainAdmin
             Add-ConditionalFormatting -WorkSheet $Worksheet -address "I2:I$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
             # PasswordLastSet
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "J2:J$lastCol" -RuleType Expression -ConditionValue "=`$J2<=(TODAY()-90)" -BackgroundColor Yellow -Bold
+            Add-ConditionalFormatting -WorkSheet $Worksheet -address "J2:J$lastCol" -RuleType Expression -ConditionValue "=`$J2<=(TODAY()-90)" -BackgroundColor Red -Bold
             # LastLogonDate
             Add-ConditionalFormatting -WorkSheet $Worksheet -address "K2:K$lastCol" -RuleType Expression -ConditionValue "=`$K2<=(TODAY()-180)" -BackgroundColor Red -Bold
             # LastLogonDate
@@ -509,36 +577,6 @@ Try {
             Add-ConditionalFormatting -WorkSheet $Worksheet -address "N2:N$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
             # CannotChangePassword
             Add-ConditionalFormatting -WorkSheet $Worksheet -address "O2:O$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
-            # What was this for?
-            #Add-ConditionalFormatting -WorkSheet $Worksheet -address "P2:P$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
-        } Else {
-            # Add conditional formatting to the data in the columns
-            # Enabled Column
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "E2:E$lastCol" -RuleType Equal -ConditionValue $False -BackgroundColor Yellow
-            # AccountExpired
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "F2:F$lastCol" -RuleType NotContainsBlanks -BackgroundColor Yellow
-            # Enterprise Admin
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "G2:G$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
-            # DomainAdmin
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "H2:H$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
-            # PasswordLastSet
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "I2:I$lastCol" -RuleType Expression -ConditionValue "=`$I2<=(TODAY()-90)" -BackgroundColor Red -Bold
-            # LastLogonDate
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "J2:J$lastCol" -RuleType Expression -ConditionValue "=`$J2<=(TODAY()-180)" -BackgroundColor Red -Bold
-            # LastLogonDate
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "J2:J$lastCol" -RuleType Expression -ConditionValue "=`=AND(`$J2 > TODAY()-180, `$J2 < TODAY()-90)" -BackgroundColor Yellow 
-            # LastLogonDate
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "J2:J$lastCol" -RuleType Expression -ConditionValue "=`$J2>=(TODAY()-90)" -BackgroundColor LightGreen
-            # PasswordNeverExpires
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "K2:K$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Red -Bold
-            # PasswordExpired
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "L2:L$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
-            # Account Locked
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "M2:M$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
-            # CannotChangePassword
-            Add-ConditionalFormatting -WorkSheet $Worksheet -address "N2:N$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
-            # What was this for?
-            # Add-ConditionalFormatting -WorkSheet $Worksheet -address "O2:O$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
         }
         Close-ExcelPackage $XLSX
     } Else {
