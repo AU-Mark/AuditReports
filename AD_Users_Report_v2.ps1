@@ -5,14 +5,20 @@ $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Pri
 $AdminSession = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 # Globals
+$UntrustPSGallery = $False
 $RemovePSGallery = $False
 $RemoveNuGet = $False
 $RemoveImportExcel = $False
 $RemoveGraphAPI = $False
 
-Try {
-    # Get the domain name
-    $DomainName = (Get-ADDomain).DNSRoot
+Function Check-ImportExcel {
+
+    param (
+        [boolean]$RemoveImportExcel,
+        [boolean]$UntrustPSGallery,
+        [boolean]$RemovePSGallery,
+        [boolean]$RemoveNuGet
+    )
 
     # Check if ImportExcel module is installed
     If (Get-Module -ListAvailable -Name 'ImportExcel') {
@@ -21,7 +27,9 @@ Try {
         # Import the ImportExcel module and set the $ImportExcel variable to True
         Import-Module ImportExcel
         $ImportExcel = $True
-        $RemoveImportExcel = $False
+        If ($Null -ne $RemoveImportExcel) {
+            $RemoveImportExcel = $False
+        }
     } Else {
         If ($AdminSession) {
             # ImportExcel module is not installed. Ask if allowed to install and user wants to install it.
@@ -43,13 +51,13 @@ Try {
                             $RemovePSGallery = $True
                         }
                         
-                        
                         If ((Get-PackageProvider).Name -notcontains 'NuGet') {
                             Install-PackageProvider -Name NuGet -Force
                             $RemoveNuGet = $True
                         } Else {
                             $RemoveNuGet = $False
                         }
+                        Write-Host "Installing the ImportExcel module. Please be patient..."
                         Install-Module -Name 'ImportExcel'-Force
                         Write-Host -ForegroundColor Green "ImportExcel installed successfully. It will be removed after running this script."
                         $ImportExcel = $True
@@ -75,6 +83,16 @@ Try {
         }
     }
 
+    Return $ImportExcel, $RemoveImportExcel, $UntrustPSGallery, $RemovePSGallery, $RemoveNuGet
+}
+
+Function Check-Entra {
+    param (
+        [boolean]$RemoveGraphAPI,
+        [boolean]$UntrustPSGallery,
+        [boolean]$RemovePSGallery,
+        [boolean]$RemoveNuGet
+    )
     $EntraID = Read-Host "Would you like to connect to Entra ID? (Y/N)"
     Switch ($EntraID) {
         'Y' { 
@@ -85,7 +103,9 @@ Try {
                 Import-Module Microsoft.Graph.Users
                 Import-Module Microsoft.Graph.DirectoryObjects
                 $GraphAPI = $True
-                $RemoveGraphAPI = $False
+                If ($Null -ne $RemoveGraphAPI) {
+                    $RemoveGraphAPI = $False
+                }
             } Else {
                 If ($AdminSession) {
                     # Graph API module is not installed. Ask if allowed to install and user wants to install it.
@@ -95,7 +115,18 @@ Try {
                     Switch ($InstallGraph) {
                         "Y" {
                             Try {
-                                Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+                                If ((Get-PSRepository).Name -contains "PSGallery") {
+                                    If ((Get-PSRepository | Where-Object {$_.Name -eq 'PSGallery'}).InstallationPolicy -eq 'Untrusted') {
+                                        Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+                                        $UntrustPSGallery = $True
+                                    } Else {
+                                        $UntrustPSGallery = $False
+                                    }
+                                } Else {
+                                    Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+                                    $RemovePSGallery = $True
+                                }
+
                                 If ((Get-PackageProvider).Name -notcontains "NuGet") {
                                     Install-PackageProvider -Name NuGet -Force
                                     $RemoveNuGet = $True
@@ -137,6 +168,7 @@ Try {
                         $PremiumEntraLicense = $True
                     } Catch {
                         If ($_.Exception.Message -like "*Neither tenant is B2C or tenant doesn't have premium license*") {
+                            Write-Warning "This tenant does not have a premium license. LastLogonDate will show on-premises AD datetimes only!"
                             $AzUsers = Get-MgUser -All -Property Id, UserPrincipalName, OnPremisesSyncEnabled, displayName, samAccountName, AccountEnabled, mail, lastPasswordChangeDateTime, PasswordPolicies, CreatedDateTime -ErrorAction Stop
                             $PremiumEntraLicense = $False
                         }
@@ -146,8 +178,19 @@ Try {
                     $GlobalAdminMembers = Get-MgDirectoryRoleMemberAsUser -DirectoryRoleId $GlobalAdminRoleId
                     $Entra = $True
                 } Catch {
-                    Write-Warning "Connection to Graph API failed. Report will show on-premises AD users only."
-                    $Entra = $False
+                    Write-Warning "Connection to Graph API failed!"
+                    $TryAgain = Read-Host "Would you like to try connecting to the Graph API again? (Y/N)"
+                    Switch ($TryAgain) {
+                        "Y" {
+                            Check-Entra -RemoveGraphAPI $RemoveGraphAPI -UntrustPSGallery $UntrustPSGallery -RemovePSGallery $RemovePSGallery -RemoveNuGet $RemoveNuGet
+                        }
+                        "N" {
+                            $Entra = $False
+                            $PremiumEntraLicense = $False
+                            $AzUsers = $Null
+                            $GlobalAdminMembers = $Null
+                        }
+                    }
                 }
             } Else {
                 Write-Warning "Connection to Graph API failed. Report will show on-premises AD users only."
@@ -161,6 +204,28 @@ Try {
             $Entra = $False
         }
     }
+
+    Return $Entra, $PremiumEntraLicense, $AzUsers, $GlobalAdminMembers, $RemoveGraphAPI, $UntrustPSGallery, $RemovePSGallery, $RemoveNuGet
+}
+
+Try {
+    $ImportExcel, $RemoveImportExcel, $IEUntrustPSGallery, $IERemovePSGallery, $IERemoveNuGet = Check-ImportExcel
+    $Entra, $PremiumEntraLicense, $AzUsers, $GlobalAdminMembers, $RemoveGraphAPI, $MgUntrustPSGallery, $MgRemovePSGallery, $MgRemoveNuGet = Check-Entra
+
+    If ($IEUntrustPSGallery -or $MgUntrustPSGallery) {
+        $UntrustPSGallery = $True
+    }
+
+    If ($IERemovePSGallery -or $MgRemovePSGallery) {
+        $RemovePSGallery = $True
+    }
+
+    If ($IERemoveNuGet -or $MgRemoveNuGet) {
+        $RemoveNuGet = $True
+    }
+
+    # Get the domain name
+    $DomainName = (Get-ADDomain).DNSRoot
 
     # Get the Enterprise Admins group members
     $DomainAdmins = Get-ADGroupMember -Identity "Enterprise Admins"
