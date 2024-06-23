@@ -209,42 +209,21 @@ Function Check-Entra {
     Return $Entra, $PremiumEntraLicense, $AzUsers, $GlobalAdminMembers, $RemoveGraphAPI, $UntrustPSGallery, $RemovePSGallery, $RemoveNuGet
 }
 
-Try {
-    $ImportExcel, $RemoveImportExcel, $IEUntrustPSGallery, $IERemovePSGallery, $IERemoveNuGet = Check-ImportExcel
-    $Entra, $PremiumEntraLicense, $AzUsers, $GlobalAdminMembers, $RemoveGraphAPI, $MgUntrustPSGallery, $MgRemovePSGallery, $MgRemoveNuGet = Check-Entra
+Function Check-ADUsers {
+    param (
+        [Parameter(Mandatory = $True)]$ADUsers,
+        [Parameter(Mandatory = $True)]$AzUsers,
+        [Parameter(Mandatory = $True)]$Entra
+    )
 
-    If ($IEUntrustPSGallery -or $MgUntrustPSGallery) {
-        $UntrustPSGallery = $True
-    }
-
-    If ($IERemovePSGallery -or $MgRemovePSGallery) {
-        $RemovePSGallery = $True
-    }
-
-    If ($IERemoveNuGet -or $MgRemoveNuGet) {
-        $RemoveNuGet = $True
-    }
-
-    # Get the domain name
-    $DomainName = (Get-ADDomain).DNSRoot
-
-    # Get the Enterprise Admins group members
-    $DomainAdmins = Get-ADGroupMember -Identity "Enterprise Admins"
-
-    # Get the Domain Admins group members
-    $DomainAdmins = Get-ADGroupMember -Identity "Domain Admins"
-
-    # Create CSV of AD Users
-    $ADUsers = Get-ADUser -Filter * -Properties * 
-
-    # Initialize an empty array to store the results
     $UserCollection = @()
+    $AzUsersToProcess = @()
 
     # Initialize user counter for progress bar
     $Count = 1
 
     ForEach ($User in $ADUsers) {
-        Write-Progress -Id 1 -Activity "Processing Users" -Status "Current Count: ($Count/$($ADUsers.Count))" -PercentComplete (($Count / $ADUsers.Count) * 100) -CurrentOperation "Processing..."
+        Write-Progress -Id 1 -Activity "Processing AD Users" -Status "Current Count: ($Count/$($ADUsers.Count))" -PercentComplete (($Count / $ADUsers.Count) * 100) -CurrentOperation "Processing... $($User.DisplayName)"
 
         # Check the users samAccountName against the list of Admin Users to verify if they are a domain admin
         If (($EnterpriseAdmins.SamAccountName) -contains $User.samAccountName) {
@@ -296,100 +275,12 @@ Try {
                     # On-Prem user with synced cloud user
                     If (($Users).UserPrincipalName -contains $AzUser.UserPrincipalName) {
                         If ($User.UserPrincipalName -eq $AzUser.UserPrincipalName) {
-                            # Check if user is a global admin in Entra ID
-                            If (($GlobalAdminMembers).UserPrincipalName -contains $AzUser.UserPrincipalName) {
-                                $GlobalAdmin = $True
-                            } Else {
-                                $GlobalAdmin = $False
-                            }
-
-                            #TODO Compare last sign-in date from AD and Graph and use the latest sign-in date
-                            If ($PremiumEntraLicense) {
-                                If ($AzUser.signInActivity.lastSignInDateTime) { 
-                                    $AzlastLogonDate = [DateTime]$AzUser.signInActivity.lastSignInDateTime
-                                    If ($User.lastLogonDate -lt $AzlastLogonDate) {
-                                        $LastLogonDate = $AzlastLogonDate
-                                    } Else {
-                                        $LastLogonDate = $User.lastLogonDate
-                                    }
-                                } Else {
-                                    $LastLogonDate = $User.lastLogonDate
-                                }
-                            } Else {
-                                $LastLogonDate = $User.lastLogonDate
-                            }
-                            
-                            $UserCollection += [PSCustomObject]@{
-                                "Name" = $User.displayName
-                                SamAccountName = $User.samAccountName
-                                UserPrincipalName = $User.userPrincipalName
-                                "Email Address" = $User.mail
-                                Enabled = $User.enabled
-                                AccountExpiredDate = $AccountExpired
-                                EnterpriseAdmin = $EnterpriseAdmin
-                                DomainAdmin = $DomainAdmin
-                                "AzGlobalAdmin" = $GlobalAdmin
-                                PasswordLastSet = $User.passwordLastSet
-                                LastLogonDate = $LastLogonDate
-                                PasswordNeverExpires = $User.passwordNeverExpires
-                                PasswordExpired = $User.passwordExpired
-                                "Account Locked" = $User.lockedOut
-                                CannotChangePassword = $User.cannotChangePassword
-                                "Date Created" = $User.whenCreated
-                                Notes = ""
-                                Action = ""
-                                "Follow Up" = ""
-                                Resolution = ""
-                            }
+                            $AzUsersToProcess += $AzUser.UserPrincipalName
                         }
-
+            
                     # Cloud only user
                     } Else {
-                        # Check if user is a global admin in Entra ID
-                        If (($GlobalAdminMembers).UserPrincipalName -contains $User.UserPrincipalName) {
-                            $GlobalAdmin = $True
-                        } Else {
-                            $GlobalAdmin = $False
-                        }
-
-                        If ($PremiumEntraLicense) {
-                            If ($AzUser.signInActivity.lastSignInDateTime) { 
-                                $LastLogonDate = [DateTime]$AzUser.signInActivity.lastSignInDateTime
-                            } Else {
-                                $LastLogonDate = $Null
-                            }
-                        } Else {
-                            $LastLogonDate = $Null
-                        }
-
-                        If ($AzUser.PasswordPolicies -contains "DisablePasswordExpiration") {
-                            $PasswordNeverExpires = $True
-                        } Else {
-                            $PasswordNeverExpires = $False
-                        }
-
-                        $UserCollection += [PSCustomObject]@{
-                            "Name" = $AzUser.displayName
-                            SamAccountName = $AzUser.samAccountName
-                            UserPrincipalName = $AzUser.userPrincipalName
-                            "Email Address" = $AzUser.mail
-                            Enabled = $AzUser.AccountEnabled
-                            AccountExpiredDate = $Null
-                            EnterpriseAdmin = $False
-                            DomainAdmin = $False
-                            "AzGlobalAdmin" = $GlobalAdmin
-                            PasswordLastSet = $AzUser.lastPasswordChangeDateTime 
-                            LastLogonDate = $LastLogonDate
-                            PasswordNeverExpires = $PasswordNeverExpires
-                            PasswordExpired = "N/A"
-                            "Account Locked" = "N/A"
-                            CannotChangePassword = "N/A"
-                            "Date Created" = $AzUser.CreatedDateTime
-                            Notes = ""
-                            Action = ""
-                            "Follow Up" = ""
-                            Resolution = ""
-                        }
+                        $AzUsersToProcess += $AzUser.UserPrincipalName
                     }
                 }
             }
@@ -419,6 +310,166 @@ Try {
 
         $Count += 1
     }
+
+    Return $UserCollection, $AzUsersToProcess
+}
+
+Function Check-AzUsers {
+    param (
+        [Parameter(Mandatory = $True)]$ADUsers,
+        [Parameter(Mandatory = $True)]$AzUsers,
+        [Parameter(Mandatory = $True)]$AzUsersToProcess,
+        [Parameter(Mandatory = $True)]$UserCollection
+    )
+
+    # Initialize user counter for progress bar
+    $Count = 1
+
+    ForEach ($AzUserObject in $AzUsersToProcess) {
+        $User = $ADUsers | Where-Object {$_.UserPrincipalName -eq $AzUserObject}
+        $AzUser =  $AZUsers | Where-Object {$_.UserPrincipalName -eq $AzUserObject}
+        
+        # On-Prem user with synced cloud user
+        If (($ADUsers).UserPrincipalName -contains $AzUserObject) {
+            Write-Progress -Id 1 -Activity "Processing AAD Users" -Status "Current Count: ($Count/$($AzUsersToProcess.Count))" -PercentComplete (($Count / $AzUsersToProcess.Count) * 100) -CurrentOperation "Processing... $($AzUser.DisplayName)"
+
+            If ($User.UserPrincipalName -eq $AzUserObject) {
+                # Check if user is a global admin in Entra ID
+                If (($GlobalAdminMembers).UserPrincipalName -contains $AzUser.UserPrincipalName) {
+                    $GlobalAdmin = $True
+                } Else {
+                    $GlobalAdmin = $False
+                }
+
+                #TODO Compare last sign-in date from AD and Graph and use the latest sign-in date
+                If ($PremiumEntraLicense) {
+                    If ($AzUser.signInActivity.lastSignInDateTime) { 
+                        $AzlastLogonDate = [DateTime]$AzUser.signInActivity.lastSignInDateTime
+                        If ($User.lastLogonDate -lt $AzlastLogonDate) {
+                            $LastLogonDate = $AzlastLogonDate
+                        } Else {
+                            $LastLogonDate = $User.lastLogonDate
+                        }
+                    } Else {
+                        $LastLogonDate = $User.lastLogonDate
+                    }
+                } Else {
+                    $LastLogonDate = $User.lastLogonDate
+                }
+                
+                $UserCollection += [PSCustomObject]@{
+                    "Name" = $User.displayName
+                    SamAccountName = $User.samAccountName
+                    UserPrincipalName = $User.userPrincipalName
+                    "Email Address" = $User.mail
+                    Enabled = $User.enabled
+                    AccountExpiredDate = $AccountExpired
+                    EnterpriseAdmin = $EnterpriseAdmin
+                    DomainAdmin = $DomainAdmin
+                    "AzGlobalAdmin" = $GlobalAdmin
+                    PasswordLastSet = $User.passwordLastSet
+                    LastLogonDate = $LastLogonDate
+                    PasswordNeverExpires = $User.passwordNeverExpires
+                    PasswordExpired = $User.passwordExpired
+                    "Account Locked" = $User.lockedOut
+                    CannotChangePassword = $User.cannotChangePassword
+                    "Date Created" = $User.whenCreated
+                    Notes = ""
+                    Action = ""
+                    "Follow Up" = ""
+                    Resolution = ""
+                }
+            }
+
+        # Cloud only user
+        } Else {
+            # Check if user is a global admin in Entra ID
+            If (($GlobalAdminMembers).UserPrincipalName -contains $User.UserPrincipalName) {
+                $GlobalAdmin = $True
+            } Else {
+                $GlobalAdmin = $False
+            }
+
+            If ($PremiumEntraLicense) {
+                If ($AzUser.signInActivity.lastSignInDateTime) { 
+                    $LastLogonDate = [DateTime]$AzUser.signInActivity.lastSignInDateTime
+                } Else {
+                    $LastLogonDate = $Null
+                }
+            } Else {
+                $LastLogonDate = $Null
+            }
+
+            If ($AzUser.PasswordPolicies -contains "DisablePasswordExpiration") {
+                $PasswordNeverExpires = $True
+            } Else {
+                $PasswordNeverExpires = $False
+            }
+
+            $UserCollection += [PSCustomObject]@{
+                "Name" = $AzUser.displayName
+                SamAccountName = $AzUser.samAccountName
+                UserPrincipalName = $AzUser.userPrincipalName
+                "Email Address" = $AzUser.mail
+                Enabled = $AzUser.AccountEnabled
+                AccountExpiredDate = $Null
+                EnterpriseAdmin = $False
+                DomainAdmin = $False
+                "AzGlobalAdmin" = $GlobalAdmin
+                PasswordLastSet = $AzUser.lastPasswordChangeDateTime 
+                LastLogonDate = $LastLogonDate
+                PasswordNeverExpires = $PasswordNeverExpires
+                PasswordExpired = "N/A"
+                "Account Locked" = "N/A"
+                CannotChangePassword = "N/A"
+                "Date Created" = $AzUser.CreatedDateTime
+                Notes = ""
+                Action = ""
+                "Follow Up" = ""
+                Resolution = ""
+            }
+        }
+
+        # Increment counter for progress bar
+        $Count += 1
+    }
+
+    Return $UserCollection
+}
+
+Try {
+    $ImportExcel, $RemoveImportExcel, $IEUntrustPSGallery, $IERemovePSGallery, $IERemoveNuGet = Check-ImportExcel
+    $Entra, $PremiumEntraLicense, $AzUsers, $GlobalAdminMembers, $RemoveGraphAPI, $MgUntrustPSGallery, $MgRemovePSGallery, $MgRemoveNuGet = Check-Entra
+
+    If ($IEUntrustPSGallery -or $MgUntrustPSGallery) {
+        $UntrustPSGallery = $True
+    }
+
+    If ($IERemovePSGallery -or $MgRemovePSGallery) {
+        $RemovePSGallery = $True
+    }
+
+    If ($IERemoveNuGet -or $MgRemoveNuGet) {
+        $RemoveNuGet = $True
+    }
+
+    # Get the domain name
+    $DomainName = (Get-ADDomain).DNSRoot
+
+    # Get the Enterprise Admins group members
+    $DomainAdmins = Get-ADGroupMember -Identity "Enterprise Admins"
+
+    # Get the Domain Admins group members
+    $DomainAdmins = Get-ADGroupMember -Identity "Domain Admins"
+
+    # Create CSV of AD Users
+    $ADUsers = Get-ADUser -Filter * -Properties *
+
+    # Process the AD users. If Entra is enabled then process on-prem AD users only.
+    $ProcessedADUsers, $AzUsersToProcess = Check-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra
+
+    # If Entra is enabled, process hybrid and cloud only users and merge LastLogonDate for hybrid users.
+    $UserCollection = Check-AzUsers -ADUsers $ADUsers -AzUsers $AzUsers -AzUsersToProcess $AzUsersToProcess -UserCollection $ProcessedADUsers
 
     # Sort the user collection by samAccountName. We have to sort before we export to Excel if we want the table sorted a specific way.
     $SortedCollection = $UserCollection | Sort-Object -Property samAccountName -Descending
@@ -517,14 +568,15 @@ Try {
     }
 
     If ($RemoveImportExcel) {
-        Remove-Module -Name 'ImportExcel'
+        Remove-Module -Name 'ImportExcel' -Force
         Uninstall-Module -Name 'ImportExcel' -Force
     }
 
     If ($RemoveGraphAPI) {
-        Remove-Module -Name 'Microsoft.Graph.Users'
-        Remove-Module -Name 'Microsoft.Graph.DirectoryObjects'
-        Remove-Module -Name 'Microsoft.Graph.Authentication'
+        Remove-Module -Name 'Microsoft.Graph.Users' -Force
+        Remove-Module -Name 'Microsoft.Graph.DirectoryObjects' -Force
+        Remove-Module -Name 'Microsoft.Graph.Identity.DirectoryManagement' -Force
+        Remove-Module -Name 'Microsoft.Graph.Authentication' -Force
         Uninstall-Module -Name 'Microsoft.Graph' -Force
     }
 
