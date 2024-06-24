@@ -1,5 +1,4 @@
 # AD User Audit Report
-Clear-Host
 
 ##############################################################################################################
 #                                                 Globals                                                    #
@@ -9,12 +8,10 @@ Clear-Host
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 $AdminSession = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-# Globals
+# Initialize default booleans for cleanup at script exit
 $UntrustPSGallery = $False
 $RemovePSGallery = $False
 $RemoveNuGet = $False
-$RemoveImportExcel = $False
-$RemoveGraphAPI = $False
 
 ##############################################################################################################
 #                                                Functions                                                   #
@@ -269,14 +266,9 @@ Function Write-Color {
     }
 }
 
-Function Check-ImportExcel {
-
-    param (
-        [boolean]$RemoveImportExcel,
-        [boolean]$UntrustPSGallery,
-        [boolean]$RemovePSGallery,
-        [boolean]$RemoveNuGet
-    )
+Function Initialize-ImportExcel {
+    # Initialize variably to remove ImportExcel module at end of script as Null
+    $RemoveImportExcel = $Null
 
     # Check if ImportExcel module is installed
     If (Get-Module -ListAvailable -Name 'ImportExcel') {
@@ -285,9 +277,7 @@ Function Check-ImportExcel {
         # Import the ImportExcel module and set the $ImportExcel variable to True
         Import-Module ImportExcel
         $ImportExcel = $True
-        If ($Null -ne $RemoveImportExcel) {
-            $RemoveImportExcel = $False
-        }
+        $RemoveImportExcel = $False
     } Else {
         If ($AdminSession) {
             # ImportExcel module is not installed. Ask if allowed to install and user wants to install it.
@@ -345,7 +335,38 @@ Function Check-ImportExcel {
     Return $ImportExcel, $RemoveImportExcel, $UntrustPSGallery, $RemovePSGallery, $RemoveNuGet
 }
 
-Function Check-Entra {
+Function Initialize-Entra {
+    <#
+    .DESCRIPTION
+    Check if the user wants to connect to Entra ID and process cloud users.
+    If the Microsoft.Graph module is not installed it will prompt the user if they want to install it.
+    If the PSRepository or PackageProvider are modified or the module is installed, it will be removed at the end of the script.
+    If a connection to Entra ID is successful then it grabs all Entra ID users and their relevant properties and a list of all global admins.
+
+    .PARAMETER [boolean]RemoveGraphAPI
+    Optional parameter to allow the function to be run in a loop until successful connection or the user cancels
+    Configures the script to remove the Microsoft.Graph module upon exit
+
+    .PARAMETER [boolean]UntrustPSGallery
+    Optional parameter to allow the function to be run in a loop until successful connection or the user cancels
+    Configures the script to untrust the PSGallery upon exit
+
+    .PARAMETER [boolean]RemovePSGallery
+    Optional parameter to allow the function to be run in a loop until successful connection or the user cancels
+    Configures the script to remove the PSGallery upon exit
+
+    .PARAMETER [boolean]RemoveNuGet
+    Optional parameter to allow the function to be run in a loop until successful connection or the user cancels
+    Configures the script to remove the NuGet package manager upon exit
+
+    .EXAMPLE
+    [Returning all the output variables without inputting any variables for initial first run of the function]
+    $Entra, $PremiumEntraLicense, $AzUsers, $GlobalAdminMembers, $RemoveGraphAPI, $UntrustPSGallery, $RemovePSGallery, $RemoveNuGet = Initialize-Entra
+    
+    [To look the function until graph API connection or user cancels]
+    Initialize-Entra -RemoveGraphAPI $RemoveGraphAPI -UntrustPSGallery $UntrustPSGallery -RemovePSGallery $RemovePSGallery -RemoveNuGet $RemoveNuGet
+    #>
+
     param (
         [boolean]$RemoveGraphAPI = $Null,
         [boolean]$UntrustPSGallery,
@@ -447,7 +468,7 @@ Function Check-Entra {
                     Write-Color -Text "Would you like to try connecting to the Graph API again? ","(Y/N): " -Color White, Yellow -NoNewLine -ShowTime; $TryAgain = Read-Host
                     Switch ($TryAgain) {
                         "Y" {
-                            Check-Entra -RemoveGraphAPI $RemoveGraphAPI -UntrustPSGallery $UntrustPSGallery -RemovePSGallery $RemovePSGallery -RemoveNuGet $RemoveNuGet
+                            Initialize-Entra -RemoveGraphAPI $RemoveGraphAPI -UntrustPSGallery $UntrustPSGallery -RemovePSGallery $RemovePSGallery -RemoveNuGet $RemoveNuGet
                         }
                         "N" {
                             Write-Color -Text "Graph API module will not be used. ","Report will show on-premises AD users only." -Color White, Yellow -ShowTime
@@ -468,32 +489,63 @@ Function Check-Entra {
             } Else {
                 Write-Color -Text "WARNING: Connection to Graph API failed. Report will show on-premises AD users only." -Color Yellow -ShowTime
                 $Entra = $False
+                $PremiumEntraLicense = $False
+                $AzUsers = $Null
+                $GlobalAdminMembers = $Null
             }
         }
         'N' {
             $Entra = $False
+            $PremiumEntraLicense = $False
+            $AzUsers = $Null
+            $GlobalAdminMembers = $Null
         }
         Default {
             $Entra = $False
+            $PremiumEntraLicense = $False
+            $AzUsers = $Null
+            $GlobalAdminMembers = $Null
         }
     }
 
     Return $Entra, $PremiumEntraLicense, $AzUsers, $GlobalAdminMembers, $RemoveGraphAPI, $UntrustPSGallery, $RemovePSGallery, $RemoveNuGet
 }
 
-Function Check-ADUsers {
+Function Measure-ADUsers {
+    <#
+    .DESCRIPTION
+    Processes the active directory domain user accounts.
+    If a connection to Entra was established it will only process on on-premises AD user accounts only. Hybrid and cloud users will be processed later.
+
+    .PARAMETER [object]ADUsers
+    Collection of all AD Users and all of their properties
+
+    .PARAMETER [object]AzUsers
+    Collection of all Entra ID Users and their relevent properties
+
+    .PARAMETER [boolean]AzUsersToProcess
+    Array of UserPrincipalNames of all the Cloud users that need to processed by this function
+
+    .EXAMPLE
+    Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $True
+    Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $False
+    Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra
+    #>
+
     param (
         [Parameter(Mandatory = $True)]$ADUsers,
         [Parameter(Mandatory = $True)]$AzUsers,
-        [Parameter(Mandatory = $True)]$Entra
+        [Parameter(Mandatory = $True)][boolean]$Entra
     )
 
+    # Initialize arrays for UserCollection and AzUsersToProcess
     $UserCollection = @()
     $AzUsersToProcess = @()
 
     # Initialize user counter for progress bar
     $Count = 1
 
+    # Process each user account found in active directory
     ForEach ($User in $ADUsers) {
         Write-Color -Text "Processing Active Directory Users" -ShowTime
         Write-Progress -Id 1 -Activity "Processing AD Users" -Status "Current Count: ($Count/$($ADUsers.Count))" -PercentComplete (($Count / $ADUsers.Count) * 100) -CurrentOperation "Processing... $($User.DisplayName)"
@@ -512,21 +564,25 @@ Function Check-ADUsers {
             $DomainAdmin = $False
         }
 
+        # If the account has an account expiration date then consider it expired.
         If ($Null -ne $User.AccountExpirationDate) {
             $AccountExpired = $User.AccountExpirationDate
         } Else {
             $AccountExpired = $Null
         }
 
+        # If email property is blank then set to a blank space for formatting the spreadsheet. This stops a previous column from displaying over it.
         If ($Null -eq $User.mail) {
             $Mail = " "
         } Else {
             $Mail = $User.mail
         }
 
+        # If an Entra connection was successful then process on-prem only users and write the rest to an array to process later
         If ($Entra) {
             # On-prem user without synced cloud user
             If (($AzUsers).UserPrincipalName -notcontains $User.UserPrincipalName) {
+                # Add the user to the UserCollection
                 $UserCollection += [PSCustomObject]@{
                     "Name" = $User.displayName
                     SamAccountName = $User.samAccountName
@@ -550,10 +606,13 @@ Function Check-ADUsers {
                     "Follow Up" = ""
                     Resolution = ""
                 }
+            # Otherwise add the user to array AzUsersToProcess to be processed by Merge-AzUsers function
             } Else {
                 $AzUsersToProcess += $User.UserPrincipalName
             }
+        # No connection to Entra ID. Process active directory users only
         } Else {
+            # Add the user to the UserCollection
             $UserCollection += [PSCustomObject]@{
                 "Name" = $User.displayName
                 SamAccountName = $User.samAccountName
@@ -584,7 +643,29 @@ Function Check-ADUsers {
     Return $UserCollection, $AzUsersToProcess
 }
 
-Function Check-AzUsers {
+Function Merge-AzUsers {
+    <#
+    .DESCRIPTION
+    Processes the users in AzUsersToProcess for both hybrid and cloud users. 
+    For hybrid users, the LastLogonTime is set according to the most recent timestamp.
+    N/A is used for properties that cloud only users do not have in Entra ID.
+
+    .PARAMETER [object]ADUsers
+    Collection of all AD Users and all of their properties
+
+    .PARAMETER [object]AzUsers
+    Collection of all Entra ID Users and their relevent properties
+
+    .PARAMETER [array]AzUsersToProcess
+    Array of UserPrincipalNames of all the Cloud users that need to processed by this function
+
+    .PARAMETER [object]UserCollection
+    Collection of all users that have already been processed
+
+    .EXAMPLE
+    Merge-AzUsers $ADUsers $AzUsers $AzUsersToProcess $UserCollection
+    #>
+
     param (
         [Parameter(Mandatory = $True)]$ADUsers,
         [Parameter(Mandatory = $True)]$AzUsers,
@@ -617,6 +698,7 @@ Function Check-AzUsers {
                 $DomainAdmin = $False
             }
 
+            # If the account has an account expiration date then consider it expired.
             If ($Null -ne $User.AccountExpirationDate) {
                 $AccountExpired = $User.AccountExpirationDate
             } Else {
@@ -630,28 +712,34 @@ Function Check-AzUsers {
                 $GlobalAdmin = $False
             }
 
+            # If email property is blank then set to a blank space for formatting the spreadsheet. This stops a previous column from displaying over it.
             If ($Null -eq $User.mail) {
                 $Mail = " "
             } Else {
                 $Mail = $User.mail
             }
 
-            #TODO Compare last sign-in date from AD and Graph and use the latest sign-in date
+            # If the tenant has a premium license then get and compare the last sign-in timestamp and lastLogonDate timestamp
             If ($PremiumEntraLicense) {
                 If ($AzUser.signInActivity.lastSignInDateTime) { 
                     $AzlastLogonDate = [DateTime]$AzUser.signInActivity.lastSignInDateTime
+                    # If the last sign-in timestamp is newer than set that as lastLogonDate property
                     If ($User.lastLogonDate -lt $AzlastLogonDate) {
                         $LastLogonDate = $AzlastLogonDate
+                    # Otherwise use the active directory lastLogonDate timestamp
                     } Else {
                         $LastLogonDate = $User.lastLogonDate
                     }
+                # If there is no last sign-in timestamp then default to AD lastLogonDate timestamp.
                 } Else {
                     $LastLogonDate = $User.lastLogonDate
                 }
+            # If the tenant doesnt have a premium license then we cant get last sign-in timestamp. Default to AD lastLogonDate timestamp.
             } Else {
                 $LastLogonDate = $User.lastLogonDate
             }
             
+            # Add the user to the UserCollection
             $UserCollection += [PSCustomObject]@{
                 "Name" = $User.displayName
                 SamAccountName = $User.samAccountName
@@ -685,6 +773,7 @@ Function Check-AzUsers {
                 $GlobalAdmin = $False
             }
 
+            # If the tenant has a premium license then grab the last sign-in timestamp
             If ($PremiumEntraLicense) {
                 If ($AzUser.signInActivity.lastSignInDateTime) { 
                     $LastLogonDate = [DateTime]$AzUser.signInActivity.lastSignInDateTime
@@ -695,18 +784,21 @@ Function Check-AzUsers {
                 $LastLogonDate = $Null
             }
 
+            # If string found in PasswordPolicies then the password is set to never expire
             If ($AzUser.PasswordPolicies -contains "DisablePasswordExpiration") {
                 $PasswordNeverExpires = $True
             } Else {
                 $PasswordNeverExpires = $False
             }
 
+            # If email property is blank then set to a blank space for formatting the spreadsheet. This stops a previous column from displaying over it.
             If ($Null -eq $AzUser.mail) {
                 $Mail = " "
             } Else {
                 $Mail = $AzUser.mail
             }
 
+            # Add the user to the UserCollection
             $UserCollection += [PSCustomObject]@{
                 "Name" = $AzUser.displayName
                 SamAccountName = "N/A"
@@ -742,8 +834,8 @@ Function Check-AzUsers {
 ##############################################################################################################
 #                                                   Main                                                     #
 ##############################################################################################################
-
 Try {
+    Clear-Host
     Write-Color -Text "__________________________________________________________________________________________" -Color White -BackGroundColor Black -HorizontalCenter $True -VerticalCenter $True
     Write-Color -Text "|                                                                                          |" -Color White -BackGroundColor Black -HorizontalCenter $True
     Write-Color -Text "|","                                            .-.                                           ","|" -Color White, DarkBlue, White -BackGroundColor Black, Black, Black -HorizontalCenter $True
@@ -759,8 +851,8 @@ Try {
     Write-Color -Text "|__________________________________________________________________________________________|" -Color White -BackGroundColor Black -HorizontalCenter $True
     Write-Color -Text "Script:","User Audit Report" -Color Yellow, White -BackGroundColor Black -LinesBefore 1
     Write-Color -Text "Checking for optional but recommended PowerShell modules" -ShowTime
-    $ImportExcel, $RemoveImportExcel, $IEUntrustPSGallery, $IERemovePSGallery, $IERemoveNuGet = Check-ImportExcel
-    $Entra, $PremiumEntraLicense, $AzUsers, $GlobalAdminMembers, $RemoveGraphAPI, $MgUntrustPSGallery, $MgRemovePSGallery, $MgRemoveNuGet = Check-Entra
+    $ImportExcel, $RemoveImportExcel, $IEUntrustPSGallery, $IERemovePSGallery, $IERemoveNuGet = Initialize-ImportExcel
+    $Entra, $PremiumEntraLicense, $AzUsers, $GlobalAdminMembers, $RemoveGraphAPI, $MgUntrustPSGallery, $MgRemovePSGallery, $MgRemoveNuGet = Initialize-Entra
 
     If ($IEUntrustPSGallery -or $MgUntrustPSGallery) {
         $UntrustPSGallery = $True
@@ -787,10 +879,10 @@ Try {
     $ADUsers = Get-ADUser -Filter * -Properties *
 
     # Process the AD users. If Entra is enabled then process on-prem AD users only.
-    $ProcessedADUsers, $AzUsersToProcess = Check-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra
+    $ProcessedADUsers, $AzUsersToProcess = Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra
 
     # If Entra is enabled, process hybrid and cloud only users and merge LastLogonDate for hybrid users.
-    $UserCollection = Check-AzUsers -ADUsers $ADUsers -AzUsers $AzUsers -AzUsersToProcess $AzUsersToProcess -UserCollection $ProcessedADUsers
+    $UserCollection = Merge-AzUsers -ADUsers $ADUsers -AzUsers $AzUsers -AzUsersToProcess $AzUsersToProcess -UserCollection $ProcessedADUsers
 
     # Sort the user collection by DisplayName. We have to sort before we export to Excel if we want the table sorted a specific way.
     $SortedCollection = $UserCollection | Sort-Object -Property Name
