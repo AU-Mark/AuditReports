@@ -1,4 +1,34 @@
-# AD User Audit Report
+<#
+	.SYNOPSIS
+    Compiles a user audit report for AD users and optionally Entra ID users
+
+	.DESCRIPTION
+	Checks if the ImportExcel module is installed for automatic formatting of the report and saving to an xlsx file. It will prompt the user if they want to install if not found.
+	Checks if the Microsoft.Graph module is installed for compiling an audit report of both on-prem and cloud accounts .It will prompt the user if they want to install if not found.
+		Prompts with an interactive logon to the tenant with only required permissions. Pulls all Entra ID users with relevant properties and GlobalAdmins.
+	Gets a list of all AD user accounts and all of their properties.
+	Processes user accounts
+		Processes the AD user accounts into a single collection
+		If Entra connection was successful, it processes Entra ID users
+	Generate and save a report
+		If ImportExcel installed the report will be saved as an xlsx file with automatic sizing and conditional formatting
+		If ImportExcel is not installed, report will be saved to a csv file. Formatting will have to be performed manually.
+  
+	.INPUTS
+    None
+
+	.OUTPUTS
+    [file]"C:\Temp\$($domainName)_Users_Report_$TimeStamp.csv"
+    OR
+    [file]"C:\Temp\$($domainName)_Users_Report_$TimeStamp.xlsx"
+
+	.NOTES
+    Version:        1.0
+    Author:         Mark Newton
+    Creation Date:  06/23/2024
+    Purpose/Change: Initial script development
+	
+	#>
 
 ##############################################################################################################
 #                                                 Globals                                                    #
