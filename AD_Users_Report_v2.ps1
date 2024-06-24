@@ -582,43 +582,74 @@ function Measure-ADUsers {
 	# Initialize user counter for progress bar
 	$Count = 1
 
-	# Process each user account found in active directory
-	foreach ($User in $ADUsers) {
-		Write-Color -Text "Processing Active Directory Users" -ShowTime
-		Write-Progress -Id 1 -Activity "Processing AD Users" -Status "Current Count: ($Count/$($ADUsers.Count))" -PercentComplete (($Count / $ADUsers.Count) * 100) -CurrentOperation "Processing... $($User.DisplayName)"
+	if ($ADUsers.Count -gt 0) {
+		# Process each user account found in active directory
+		foreach ($User in $ADUsers) {
+			Write-Color -Text "Processing Active Directory Users" -ShowTime
+			Write-Progress -Id 1 -Activity "Processing AD Users" -Status "Current Count: ($Count/$($ADUsers.Count))" -PercentComplete (($Count / $ADUsers.Count) * 100) -CurrentOperation "Processing... $($User.DisplayName)"
 
-		# Check the users samAccountName against the list of Admin Users to verify if they are a domain admin
-		if (($EnterpriseAdmins.SamAccountName) -contains $User.SamAccountName) {
-			$EnterpriseAdmin = $True
-		} else {
-			$EnterpriseAdmin = $False
-		}
+			# Check the users samAccountName against the list of Admin Users to verify if they are a domain admin
+			if (($EnterpriseAdmins.SamAccountName) -contains $User.SamAccountName) {
+				$EnterpriseAdmin = $True
+			} else {
+				$EnterpriseAdmin = $False
+			}
 
-		# Check the users samAccountName against the list of Admin Users to verify if they are a domain admin
-		if (($DomainAdmins.SamAccountName) -contains $User.SamAccountName) {
-			$DomainAdmin = $True
-		} else {
-			$DomainAdmin = $False
-		}
+			# Check the users samAccountName against the list of Admin Users to verify if they are a domain admin
+			if (($DomainAdmins.SamAccountName) -contains $User.SamAccountName) {
+				$DomainAdmin = $True
+			} else {
+				$DomainAdmin = $False
+			}
 
-		# If the account has an account expiration date then consider it expired.
-		if ($Null -ne $User.AccountExpirationDate) {
-			$AccountExpired = $User.AccountExpirationDate
-		} else {
-			$AccountExpired = $Null
-		}
+			# If the account has an account expiration date then consider it expired.
+			if ($Null -ne $User.AccountExpirationDate) {
+				$AccountExpired = $User.AccountExpirationDate
+			} else {
+				$AccountExpired = $Null
+			}
 
-		# If email property is blank then set to a blank space for formatting the spreadsheet. This stops a previous column from displaying over it.
-		if ($Null -eq $User.mail) {
-			$Mail = " "
-		} else {
-			$Mail = $User.mail
-		}
+			# If email property is blank then set to a blank space for formatting the spreadsheet. This stops a previous column from displaying over it.
+			if ($Null -eq $User.mail) {
+				$Mail = " "
+			} else {
+				$Mail = $User.mail
+			}
 
-		# If an Entra connection was successful then process on-prem only users and write the rest to an array to process later
-		if ($Entra) {
-			# On-prem user without synced cloud user
-			if (($AzUsers).UserPrincipalName -notcontains $User.UserPrincipalName) {
+			# If an Entra connection was successful then process on-prem only users and write the rest to an array to process later
+			if ($Entra) {
+				# On-prem user without synced cloud user
+				if (($AzUsers).UserPrincipalName -notcontains $User.UserPrincipalName) {
+					# Add the user to the UserCollection
+					$UserCollection += [pscustomobject]@{
+						"Name" = $User.DisplayName
+						SamAccountName = $User.SamAccountName
+						UserPrincipalName = $User.UserPrincipalName
+						"Email Address" = $Mail
+						"User Type" = "On-Prem"
+						Enabled = $User.Enabled
+						AccountExpiredDate = $AccountExpired
+						EnterpriseAdmin = $EnterpriseAdmin
+						DomainAdmin = $DomainAdmin
+						"AzGlobalAdmin" = "N/A"
+						PasswordLastSet = $User.PasswordLastSet
+						LastLogonDate = $User.LastLogonDate
+						PasswordNeverExpires = $User.PasswordNeverExpires
+						PasswordExpired = $User.PasswordExpired
+						"Account Locked" = $User.lockedOut
+						CannotChangePassword = $User.CannotChangePassword
+						"Date Created" = $User.whenCreated
+						Notes = ""
+						Action = ""
+						"Follow Up" = ""
+						Resolution = ""
+					}
+					# Otherwise add the user to array AzUsersToProcess to be processed by Merge-AzUsers function
+				} else {
+					$AzUsersToProcess += $User.UserPrincipalName
+				}
+				# No connection to Entra ID. Process active directory users only
+			} else {
 				# Add the user to the UserCollection
 				$UserCollection += [pscustomobject]@{
 					"Name" = $User.DisplayName
@@ -630,7 +661,6 @@ function Measure-ADUsers {
 					AccountExpiredDate = $AccountExpired
 					EnterpriseAdmin = $EnterpriseAdmin
 					DomainAdmin = $DomainAdmin
-					"AzGlobalAdmin" = "N/A"
 					PasswordLastSet = $User.PasswordLastSet
 					LastLogonDate = $User.LastLogonDate
 					PasswordNeverExpires = $User.PasswordNeverExpires
@@ -643,41 +673,13 @@ function Measure-ADUsers {
 					"Follow Up" = ""
 					Resolution = ""
 				}
-				# Otherwise add the user to array AzUsersToProcess to be processed by Merge-AzUsers function
-			} else {
-				$AzUsersToProcess += $User.UserPrincipalName
 			}
-			# No connection to Entra ID. Process active directory users only
-		} else {
-			# Add the user to the UserCollection
-			$UserCollection += [pscustomobject]@{
-				"Name" = $User.DisplayName
-				SamAccountName = $User.SamAccountName
-				UserPrincipalName = $User.UserPrincipalName
-				"Email Address" = $Mail
-				"User Type" = "On-Prem"
-				Enabled = $User.Enabled
-				AccountExpiredDate = $AccountExpired
-				EnterpriseAdmin = $EnterpriseAdmin
-				DomainAdmin = $DomainAdmin
-				PasswordLastSet = $User.PasswordLastSet
-				LastLogonDate = $User.LastLogonDate
-				PasswordNeverExpires = $User.PasswordNeverExpires
-				PasswordExpired = $User.PasswordExpired
-				"Account Locked" = $User.lockedOut
-				CannotChangePassword = $User.CannotChangePassword
-				"Date Created" = $User.whenCreated
-				Notes = ""
-				Action = ""
-				"Follow Up" = ""
-				Resolution = ""
-			}
-		}
 
-		$Count += 1
+			$Count += 1
+		}
 	}
 
-	return $UserCollection,$AzUsersToProcess
+	return $UserCollection, $AzUsersToProcess
 }
 
 function Merge-AzUsers {
@@ -888,40 +890,70 @@ try {
 	Write-Color -Text "|__________________________________________________________________________________________|" -Color White -BackgroundColor Black -HorizontalCenter $True
 	Write-Color -Text "Script:","User Audit Report" -Color Yellow,White -BackgroundColor Black -LinesBefore 1
 	Write-Color -Text "Checking for optional but recommended PowerShell modules" -ShowTime
+
+	# Check for and prompt to install ImportExcel module
 	$ImportExcel,$RemoveImportExcel,$IEUntrustPSGallery,$IERemovePSGallery,$IERemoveNuGet = Initialize-ImportExcel
+
+	# Check for and prompt to install Microsoft.Graph module and connect to Entra ID
 	$Entra,$PremiumEntraLicense,$AzUsers,$GlobalAdminMembers,$RemoveGraphAPI,$MgUntrustPSGallery,$MgRemovePSGallery,$MgRemoveNuGet = Initialize-Entra
 
+	try {
+		Import-Module ActiveDirectory
+		$ActiveDirectory = $True
+	} catch {
+		if ($Entra) {
+			Write-Color -Text "WARNING: ActiveDirectory module could not be imported. You will only be able to generate a cloud users audit report." -Color Yellow -ShowTime
+			$ActiveDirectory = $False
+		} else {
+			Write-Color -Text "ERROR: The ActiveDirectory module could not be loaded and you are not connected to Microsoft Entra. At least one is required for this script to run." -Color Red -ShowTime
+			Write-Color -Text "Exiting script..." -Color Red -ShowTime
+			Exit 1
+		}
+	}
+
+	# If either value is true, set the PSGallery back to untrusted at script exit
 	if ($IEUntrustPSGallery -or $MgUntrustPSGallery) {
 		$UntrustPSGallery = $True
 	}
 
+	# If either value is true, set the PSGallery to be removed at script exit
 	if ($IERemovePSGallery -or $MgRemovePSGallery) {
 		$RemovePSGallery = $True
 	}
 
+	# If either value is true, remove the NuGet package manager at script exit
 	if ($IERemoveNuGet -or $MgRemoveNuGet) {
 		$RemoveNuGet = $True
 	}
 
-	# Get the domain name
-	$DomainName = (Get-ADDomain).DNSRoot
+	if ($ActiveDirectory) {
+		# Get the domain name
+		$DomainName = (Get-ADDomain).DNSRoot
 
-	# Get the Enterprise Admins group members
-	$DomainAdmins = Get-ADGroupMember -Identity "Enterprise Admins"
+		# Get the Enterprise Admins group members
+		$EnterpriseAdmins = Get-ADGroupMember -Identity "Enterprise Admins"
 
-	# Get the Domain Admins group members
-	$DomainAdmins = Get-ADGroupMember -Identity "Domain Admins"
+		# Get the Domain Admins group members
+		$DomainAdmins = Get-ADGroupMember -Identity "Domain Admins"
 
-	# Create CSV of AD Users
-	$ADUsers = Get-ADUser -Filter * -Properties *
+		# Get all AD users with all of their properties
+		$ADUsers = Get-ADUser -Filter * -Properties *
 
-	# Process the AD users. If Entra is enabled then process on-prem AD users only.
-	$ProcessedADUsers,$AzUsersToProcess = Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra
+		# Process the AD users. If Entra is enabled then process on-prem AD users only and log hybrid users for processing with Merge-AzUsers.
+		$ProcessedADUsers, $AzUsersToProcess = Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra
+	} else {
+		$DomainName = (Get-MgDomain | Where-Object {$_.IsDefault -eq $True}).Id
+		$EnterpriseAdmins = @()
+		$DomainAdmins = @()
+		$ADUsers = @()
+		$ProcessedADUsers = @()
+		$AzUsersToProcess = @()
+	}
 
 	# If Entra is enabled, process hybrid and cloud only users and merge LastLogonDate for hybrid users.
 	$UserCollection = Merge-AzUsers -ADUsers $ADUsers -AzUsers $AzUsers -AzUsersToProcess $AzUsersToProcess -UserCollection $ProcessedADUsers
 
-	# Sort the user collection by DisplayName. We have to sort before we export to Excel if we want the table sorted a specific way.
+	# Sort the user collection by Name. We have to sort before we export to Excel or csv if we want the table sorted a specific way.
 	$SortedCollection = $UserCollection | Sort-Object -Property Name
 
 	# Timestamp for Filename
