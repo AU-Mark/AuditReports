@@ -1,4 +1,4 @@
-<#
+	<#
 	.SYNOPSIS
     Compiles a user audit report for AD users and optionally Entra ID users
 
@@ -48,7 +48,7 @@ $RemoveNuGet = $False
 ##############################################################################################################
 
 function Write-Color {
-<#
+	<#
     .SYNOPSIS
     Write-Color is a wrapper around Write-Host delivering a lot of additional features for easier color options.
 
@@ -892,11 +892,14 @@ try {
 	Write-Color -Text "Author: " ,"Mark Newton" -Color Yellow, White -BackGroundColor Black, Black -HorizontalCenter $True -LinesAfter 1
 	Write-Color -Text "Checking for optional but recommended PowerShell modules" -ShowTime
 
-	# Check for and prompt to install ImportExcel module
-	$ImportExcel,$RemoveImportExcel,$IEUntrustPSGallery,$IERemovePSGallery,$IERemoveNuGet = Initialize-ImportExcel
-
-	# Check for and prompt to install Microsoft.Graph module and connect to Entra ID
-	$Entra,$PremiumEntraLicense,$AzUsers,$GlobalAdminMembers,$RemoveGraphAPI,$MgUntrustPSGallery,$MgRemovePSGallery,$MgRemoveNuGet = Initialize-Entra
+	if ($PSVersionTable.PSVersion.Major -lt 5) {
+		$ImportExcel = $False
+		$Entra = $False
+		$SupportedPS = $False
+		Write-Color -Text "WARNING: The detected version of powershell on this system does not support installation of modules. Output will be on-prem AD users only and in CSV format only." -Color Yellow
+	} else {
+		$SupportedPS = $True
+	}
 
 	try {
 		Import-Module ActiveDirectory
@@ -910,6 +913,14 @@ try {
 			Write-Color -Text "Exiting script..." -Color Red -ShowTime
 			Exit 1
 		}
+	}
+
+	if ($SupportedPS) {
+		# Check for and prompt to install ImportExcel module
+		$ImportExcel,$RemoveImportExcel,$IEUntrustPSGallery,$IERemovePSGallery,$IERemoveNuGet = Initialize-ImportExcel
+
+		# Check for and prompt to install Microsoft.Graph module and connect to Entra ID
+		$Entra,$PremiumEntraLicense,$AzUsers,$GlobalAdminMembers,$RemoveGraphAPI,$MgUntrustPSGallery,$MgRemovePSGallery,$MgRemoveNuGet = Initialize-Entra
 	}
 
 	# If either value is true, set the PSGallery back to untrusted at script exit
@@ -951,8 +962,12 @@ try {
 		$AzUsersToProcess = @()
 	}
 
-	# If Entra is enabled, process hybrid and cloud only users and merge LastLogonDate for hybrid users.
-	$UserCollection = Merge-AzUsers -ADUsers $ADUsers -AzUsers $AzUsers -AzUsersToProcess $AzUsersToProcess -UserCollection $ProcessedADUsers
+	if ($Entra) {
+		# If Entra is enabled, process hybrid and cloud only users and merge LastLogonDate for hybrid users.
+		$UserCollection = Merge-AzUsers -ADUsers $ADUsers -AzUsers $AzUsers -AzUsersToProcess $AzUsersToProcess -UserCollection $ProcessedADUsers
+	} Else {
+		$UserCollection = $ProcessedADUsers
+	}
 
 	# Sort the user collection by Name. We have to sort before we export to Excel or csv if we want the table sorted a specific way.
 	$SortedCollection = $UserCollection | Sort-Object -Property Name
@@ -1039,7 +1054,7 @@ try {
 	} else {
 		# Format the file name with the domain name
 		$FileName = "C:\Temp\$($domainName)_Users_Report_$TimeStamp.csv"
-		Export-Csv -Path $FileName -NoTypeInformation
+		$SortedCollection | Export-Csv -Path $FileName -NoTypeInformation
 	}
 
 	Write-Color -Text "Report successfully saved to: ","$FileName" -Color Green,White -ShowTime
