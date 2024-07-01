@@ -313,7 +313,7 @@ function Initialize-ImportExcel {
 		if ($AdminSession) {
 			# ImportExcel module is not installed. Ask if allowed to install and user wants to install it.
 			Write-Color -Text 'WARNING: ImportExcel module is not installed. Without it the report will output in CSV and you will have to format it manually.' -Color Yellow -ShowTime
-			Write-Color -Text "If authorized to install modules on this system",", would you like to temporarily install it for this script? ","(Y/N): " -Color Red,White,Yellow -NoNewline -ShowTime; $InstallImportExcel = Read-Host
+			Write-Color -Text "If authorized to install modules on this system",", would you like to temporarily install it for this script? ","(Y/N): " -Color Red,White,Yellow -NoNewline -ShowTime; $InstallImportExcel = Read-Host ''
 
 			switch ($InstallImportExcel) {
 				"Y" {
