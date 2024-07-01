@@ -565,7 +565,7 @@ function Measure-ADUsers {
     .EXAMPLE
     Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $True
     Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $False
-    Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra
+    Measure-ADUsers -ADUsers $ADUsers -Entra $False
     #>
 
 	param(
@@ -955,7 +955,7 @@ try {
 			# Process the AD users. If Entra is enabled then process on-prem AD users only and log hybrid users for processing with Merge-AzUsers.
 			$ProcessedADUsers, $AzUsersToProcess = Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra
 		} Else {
-			# Process the AD users. If Entra is enabled then process on-prem AD users only and log hybrid users for processing with Merge-AzUsers.
+			# Process the AD users. If Entra is disabled then process on-prem AD users only.
 			$ProcessedADUsers, $AzUsersToProcess = Measure-ADUsers -ADUsers $ADUsers -Entra $Entra
 		}
 	} else {
@@ -1094,6 +1094,6 @@ try {
 			Uninstall-PackageProvider -Name NuGet -Force
 		}
 	} catch {
-		Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)","Err Name: ","$($_.Exception.GetType().FullName) ","Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
+		Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)"," Err Name: ","$($_.Exception.GetType().FullName) "," Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
 	}
 }
