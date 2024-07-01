@@ -950,8 +950,13 @@ try {
 		# Get all AD users with all of their properties
 		$ADUsers = Get-ADUser -Filter * -Properties *
 
-		# Process the AD users. If Entra is enabled then process on-prem AD users only and log hybrid users for processing with Merge-AzUsers.
-		$ProcessedADUsers, $AzUsersToProcess = Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra
+		If ($Entra) {
+			# Process the AD users. If Entra is enabled then process on-prem AD users only and log hybrid users for processing with Merge-AzUsers.
+			$ProcessedADUsers, $AzUsersToProcess = Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra
+		} Else {
+			# Process the AD users. If Entra is enabled then process on-prem AD users only and log hybrid users for processing with Merge-AzUsers.
+			$ProcessedADUsers, $AzUsersToProcess = Measure-ADUsers -ADUsers $ADUsers -AzUsers $Null -Entra $Entra
+		}
 	} else {
 		$DomainName = (Get-MgDomain | Where-Object {$_.IsDefault -eq $True}).Id
 		$EnterpriseAdmins = @()
