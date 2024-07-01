@@ -373,7 +373,7 @@ function Initialize-Entra {
     If the PSRepository or PackageProvider are modified or the module is installed, it will be removed at the end of the script.
     If a connection to Entra ID is successful then it grabs all Entra ID users and their relevant properties and a list of all global admins.
 
-    .PARAMETER [boolean]RemoveGraphAPI
+    .PARAMETER RemoveGraphAPI
     Optional parameter to allow the function to be run in a loop until successful connection or the user cancels
     Configures the script to remove the Microsoft.Graph module upon exit
 
@@ -403,7 +403,9 @@ function Initialize-Entra {
 		[boolean]$RemovePSGallery,
 		[boolean]$RemoveNuGet
 	)
+
 	Write-Color -Text "Would you like to connect to Entra ID? ","(Y/N)" -Color White,Yellow -NoNewline -ShowTime; $EntraID = Read-Host ' '
+	
 	switch ($EntraID) {
 		'Y' {
 			if (Get-Module -ListAvailable -Name 'Microsoft.Graph') {
@@ -416,9 +418,6 @@ function Initialize-Entra {
 				Import-Module Microsoft.Graph.Identity.DirectoryManagement
 
 				$GraphAPI = $True
-				if ($Null -ne $RemoveGraphAPI) {
-					$RemoveGraphAPI = $False
-				}
 			} else {
 				# Check if we are running in an admin session. Otherwise skip trying to install the module and throw a warning to console.
 				if ($AdminSession) {
