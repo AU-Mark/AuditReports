@@ -338,6 +338,7 @@ function Initialize-ImportExcel {
 						}
 						Write-Color -Text "Installing the ImportExcel module. Please be patient..." -ShowTime
 						Install-Module -Name 'ImportExcel' -Force
+						Import-Module -Name 'ImportExcel'
 						Write-Color -Text "ImportExcel module installed successfully."," It will be removed when this script exits." -Color Green,Yellow -ShowTime
 						$ImportExcel = $True
 						$RemoveImportExcel = $True
