@@ -332,7 +332,7 @@ function Initialize-ImportExcel {
 						}
 
 						if ((Get-PackageProvider).Name -notcontains 'NuGet') {
-							Install-PackageProvider -Name NuGet -Force
+							Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
 							$RemoveNuGet = $True
 						} else {
 							$RemoveNuGet = $False
@@ -443,7 +443,7 @@ function Initialize-Entra {
 								}
 
 								if ((Get-PackageProvider).Name -notcontains "NuGet") {
-									Install-PackageProvider -Name NuGet -Force
+									Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
 									$RemoveNuGet = $True
 								} else {
 									$RemoveNuGet = $False
@@ -888,7 +888,7 @@ try {
 	Write-Color -Text "|","                                                  .#+                                     ","|" -Color White,DarkBlue,White -BackgroundColor Black,Black,Black -HorizontalCenter $True
 	Write-Color -Text "|","                                                  *+                                      ","|" -Color White,DarkBlue,White -BackgroundColor Black,Black,Black -HorizontalCenter $True
 	Write-Color -Text "|__________________________________________________________________________________________|" -Color White -BackgroundColor Black -HorizontalCenter $True
-	Write-Color -Text "Script: ","User Audit Report" -Color Yellow,White -BackgroundColor Black -HorizontalCenter $True -LinesBefore 1
+	Write-Color -Text "Script: ","User Audit Report" -Color Yellow,White -BackgroundColor Black, Black -HorizontalCenter $True -LinesBefore 1
 	Write-Color -Text "Author: " ,"Mark Newton" -Color Yellow, White -BackGroundColor Black, Black -HorizontalCenter $True -LinesAfter 1
 	Write-Color -Text "Checking for optional but recommended PowerShell modules" -ShowTime
 
@@ -896,7 +896,7 @@ try {
 		$ImportExcel = $False
 		$Entra = $False
 		$SupportedPS = $False
-		Write-Color -Text "WARNING: The detected version of powershell on this system does not support installation of modules. Output will be on-prem AD users only and in CSV format only." -Color Yellow
+		Write-Color -Text "WARNING: The detected version of powershell on this system does not support installation of modules. Output will be on-prem AD users only and in CSV format only. You can run this script from another system with PowerShell 5.1 or higher to install modules and output to xlsx directly." -Color Yellow
 	} else {
 		$SupportedPS = $True
 	}
@@ -1058,7 +1058,7 @@ try {
 	}
 
 	Write-Color -Text "Report successfully saved to: ","$FileName" -Color Green,White -ShowTime
-	Write-Color -Text "" -Color Blue -HorizontalCenter $True -LinesBefore 1
+	Write-Color -Text "Stay classy, Aunalytics" -Color Blue -HorizontalCenter $True -LinesBefore 1
 } catch {
 	Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)","Err Name: ","$($_.Exception.GetType().FullName) ","Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
 } finally {
