@@ -570,8 +570,8 @@ function Measure-ADUsers {
 
 	param(
 		[Parameter(Mandatory = $True)] $ADUsers,
-		[Parameter(Mandatory = $True)] $AzUsers,
-		[Parameter(Mandatory = $True)] [boolean]$Entra
+		[Parameter(Mandatory = $True)] [boolean]$Entra,
+		$AzUsers
 	)
 
 	# Initialize arrays for UserCollection and AzUsersToProcess
