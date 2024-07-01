@@ -582,9 +582,10 @@ function Measure-ADUsers {
 	$Count = 1
 
 	if ($ADUsers.Count -gt 0) {
+		Write-Color -Text "Processing Active Directory Users" -ShowTime
+
 		# Process each user account found in active directory
 		foreach ($User in $ADUsers) {
-			Write-Color -Text "Processing Active Directory Users" -ShowTime
 			Write-Progress -Id 1 -Activity "Processing AD Users" -Status "Current Count: ($Count/$($ADUsers.Count))" -PercentComplete (($Count / $ADUsers.Count) * 100) -CurrentOperation "Processing... $($User.DisplayName)"
 
 			# Check the users samAccountName against the list of Admin Users to verify if they are a domain admin
@@ -714,8 +715,9 @@ function Merge-AzUsers {
 	# Initialize user counter for progress bar
 	$Count = 1
 
+	Write-Color -Text "Processing Entra ID Users" -ShowTime
+
 	foreach ($AzUser in $AzUsers) {
-		Write-Color -Text "Processing Entra ID Users" -ShowTime
 		Write-Progress -Id 1 -Activity "Processing Entra Users" -Status "Current Count: ($Count/$($AzUsers.Count))" -PercentComplete (($Count / $AzUsers.Count) * 100) -CurrentOperation "Processing... $($AzUser.DisplayName)"
 
 		# On-Prem user with synced cloud user
