@@ -398,7 +398,7 @@ function Initialize-Entra {
     #>
 
 	param(
-		[boolean]$RemoveGraphAPI = $Null,
+		$RemoveGraphAPI = $Null,
 		[boolean]$UntrustPSGallery,
 		[boolean]$RemovePSGallery,
 		[boolean]$RemoveNuGet
