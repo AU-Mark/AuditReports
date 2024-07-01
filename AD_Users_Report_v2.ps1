@@ -889,7 +889,6 @@ try {
 	Write-Color -Text "|__________________________________________________________________________________________|" -Color White -BackgroundColor Black -HorizontalCenter $True
 	Write-Color -Text "Script: ","User Audit Report" -Color Yellow,White -HorizontalCenter $True -LinesBefore 1
 	Write-Color -Text "Author: " ,"Mark Newton" -Color Yellow,White -HorizontalCenter $True -LinesAfter 1
-	Write-Color -Text "Checking for optional but recommended PowerShell modules" -ShowTime
 
 	if ($PSVersionTable.PSVersion.Major -lt 5) {
 		$ImportExcel = $False
@@ -915,6 +914,8 @@ try {
 	}
 
 	if ($SupportedPS) {
+		Write-Color -Text "Checking for optional but recommended PowerShell modules" -ShowTime
+
 		# Check for and prompt to install ImportExcel module
 		$ImportExcel,$RemoveImportExcel,$IEUntrustPSGallery,$IERemovePSGallery,$IERemoveNuGet = Initialize-ImportExcel
 
