@@ -313,7 +313,7 @@ function Initialize-ImportExcel {
 		if ($AdminSession) {
 			# ImportExcel module is not installed. Ask if allowed to install and user wants to install it.
 			Write-Color -Text 'WARNING: ImportExcel module is not installed. Without it the report will output in CSV and you will have to format it manually.' -Color Yellow -ShowTime
-			Write-Color -Text "If authorized to install modules on this system",", would you like to temporarily install it for this script? ","(Y/N): " -Color Red,White,Yellow -NoNewline -ShowTime; $InstallImportExcel = Read-Host ''
+			Write-Color -Text "If authorized to install modules on this system",", would you like to temporarily install it for this script? ","(Y/N)" -Color Red,White,Yellow -NoNewline -ShowTime; $InstallImportExcel = Read-Host ' '
 
 			switch ($InstallImportExcel) {
 				"Y" {
@@ -343,7 +343,7 @@ function Initialize-ImportExcel {
 						$RemoveImportExcel = $True
 					} catch {
 						Write-Color -Text "ERROR: ImportExcel module failed to install. See the error below. The report will output to CSV only until the error is corrected." -Color Red -ShowTime
-						Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)","Err Name: ","$($_.Exception.GetType().FullName) ","Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
+						Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)"," Err Name: ","$($_.Exception.GetType().FullName) "," Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
 						$ImportExcel = $False
 						$RemoveImportExcel = $True
 					}
@@ -403,7 +403,7 @@ function Initialize-Entra {
 		[boolean]$RemovePSGallery,
 		[boolean]$RemoveNuGet
 	)
-	Write-Color -Text "Would you like to connect to Entra ID? ","(Y/N): " -Color White,Yellow -NoNewline -ShowTime; $EntraID = Read-Host
+	Write-Color -Text "Would you like to connect to Entra ID? ","(Y/N)" -Color White,Yellow -NoNewline -ShowTime; $EntraID = Read-Host ' '
 	switch ($EntraID) {
 		'Y' {
 			if (Get-Module -ListAvailable -Name 'Microsoft.Graph') {
@@ -424,7 +424,7 @@ function Initialize-Entra {
 				if ($AdminSession) {
 					# Graph API module is not installed. Ask if allowed to install and user wants to install it.
 					Write-Color -Text 'WARNING: Graph API module is not installed. The report will display on-premises AD Users only.' -Color Yellow -ShowTime
-					Write-Color -Text "If authorized to install modules on this system",", would you like to temporarily install it for this script? ","(Y/N): " -Color Red,White,Yellow -NoNewline -ShowTime; $InstallGraph = Read-Host
+					Write-Color -Text "If authorized to install modules on this system",", would you like to temporarily install it for this script? ","(Y/N)" -Color Red,White,Yellow -NoNewline -ShowTime; $InstallGraph = Read-Host ' '
 
 					switch ($InstallGraph) {
 						"Y" {
@@ -501,7 +501,7 @@ function Initialize-Entra {
 				} catch {
 					Write-Color -Text "ERROR: Connection to Graph API failed!" -Color Red -ShowTime
 					Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)","Err Name: ","$($_.Exception.GetType().FullName) ","Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
-					Write-Color -Text "Would you like to try connecting to the Graph API again? ","(Y/N): " -Color White,Yellow -NoNewline -ShowTime; $TryAgain = Read-Host
+					Write-Color -Text "Would you like to try connecting to the Graph API again? ","(Y/N)" -Color White,Yellow -NoNewline -ShowTime; $TryAgain = Read-Host ' '
 					switch ($TryAgain) {
 						"Y" {
 							Initialize-Entra -RemoveGraphAPI $RemoveGraphAPI -UntrustPSGallery $UntrustPSGallery -RemovePSGallery $RemovePSGallery -RemoveNuGet $RemoveNuGet
