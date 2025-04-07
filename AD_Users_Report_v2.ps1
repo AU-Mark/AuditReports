@@ -1,47 +1,73 @@
-	<#
-	.SYNOPSIS
-    Compiles a user audit report for AD users and optionally Entra ID users
+<#
+.SYNOPSIS
+Compiles a user audit report for AD users and optionally Entra ID users
 
-	.DESCRIPTION
-	Checks if the ImportExcel module is installed for automatic formatting of the report and saving to an xlsx file. It will prompt the user if they want to install if not found.
-	Checks if the Microsoft.Graph module is installed for compiling an audit report of both on-prem and cloud accounts .It will prompt the user if they want to install if not found.
-		Prompts with an interactive logon to the tenant with only required permissions. Pulls all Entra ID users with relevant properties and GlobalAdmins.
-	Gets a list of all AD user accounts and all of their properties.
-	Processes user accounts
-		Processes the AD user accounts into a single collection
-		If Entra connection was successful, it processes Entra ID users
-	Generate and save a report
-		If ImportExcel installed the report will be saved as an xlsx file with automatic sizing and conditional formatting
-		If ImportExcel is not installed, report will be saved to a csv file. Formatting will have to be performed manually.
-  
-	.INPUTS
-    None
+.DESCRIPTION
+Checks if the ImportExcel module is installed for automatic formatting of the report and saving to an xlsx file. It will prompt the user if they want to install if not found.
+Checks if the Microsoft.Graph module is installed for compiling an audit report of both on-prem and cloud accounts .It will prompt the user if they want to install if not found.
+	Prompts with an interactive logon to the tenant with only required permissions. Pulls all Entra ID users with relevant properties and GlobalAdmins.
+Gets a list of all AD user accounts and all of their properties.
+Processes user accounts
+	Processes the AD user accounts into a single collection
+	if Entra connection was successful, it processes Entra ID users and merges into a single report. Including merging timestamps for lastlogon datetime.
+Generate and save a report
+	if ImportExcel installed the report will be saved as an xlsx file with automatic sizing and conditional formatting
+	if ImportExcel is not installed, report will be saved to a csv file. Formatting will have to be performed manually.
 
-	.OUTPUTS
-    [file]"C:\Temp\$($domainName)_Users_Report_$TimeStamp.csv"
-    OR
-    [file]"C:\Temp\$($domainName)_Users_Report_$TimeStamp.xlsx"
+.INPUTS
+None
 
-	.NOTES
-    Version:        1.0
-    Author:         Mark Newton
-    Creation Date:  06/23/2024
-    Purpose/Change: Initial script development
-	
-	#>
+.OUTPUTS
+[file]"C:\Temp\$($domainName)_Users_Report_$TimeStamp.csv"
+OR
+[file]"C:\Temp\$($domainName)_Users_Report_$TimeStamp.xlsx"
+
+.NOTES
+Version:        1.0
+Author:         Mark Newton
+Creation Date:  06/23/2024
+Purpose/Change: Initial script development
+#>
 
 ##############################################################################################################
-#                                                 Globals                                                    #
+#                                            Globals (WRITABLE)                                              #
 ##############################################################################################################
 
-# Check if powershell is running in an admin session
-$currentPrincipal = New-Object Security.Principal.WindowsPrincipal ([Security.Principal.WindowsIdentity]::GetCurrent())
-$AdminSession = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
-# Initialize default booleans for cleanup at script exit
-$UntrustPSGallery = $False
-$RemovePSGallery = $False
-$RemoveNuGet = $False
+# Dictionary of known service accounts and their descriptions. Descriptions are just for internal reference only.
+$KnownServiceAccounts = @{
+	"minable" = "RMM Admin Service Account"
+	"rmm-service" = "RMM Admin Service Account"
+	"svc-rmm" = "RMM Admin Service Account"
+	"Sophos" = "Sophos Service Account"
+	"SQLAdmin" = "SQL Admin Service Account"
+	"VeeamAdmin" = "Veeam Admin Service Account"
+	"asa2ldap" = "ASA LDAP Lookup Service Account"
+	"axcientbackupadmin" = "Retired Axcient Backup Service Account"
+	"mwservice" = "Retired Level Platforms Managed Workplace Service Account"
+	"SBSMonAcct" = "Default Small Business Service Monitoring Service Account"
+	"untangle2ldap" = "Untangle NG Firewall LDAP Lookup Service Account"
+	"untangle" = "Untangle NG Firewall Service Account"
+	"xerox2ldap" = "Xerox LDAP Lookup Service Account"
+	"RoarAgent" = "Lionguard Roar Agent Service Account"
+	"wlc2ldap" = "Wireless LAN Client LDAP Lookup Service Account"
+	"icims" = "Internet Collaborative Information Management Systems Service Account"
+	"svc-duo" = "DUO Auth Proxy Service Account"
+	"svc-entra" = "Entra Connect Sync Account"
+	"svc-ldap-duo" = "DUO Auth Proxy Service Account"
+	"svc-knowbe4-adisync" = "KnowBe4 ADI Sync Service Account"
+	"svc-ldap-ADSync" = "DUO Auth Proxy Service Account"
+	"svc-liongard" = "Lionguard Service Account"
+	"OpenDns_Connector" = "OpenDNS Connector Service Account"
+	"svc-crestron" = "Crestron Flex Scheduling Service Account"
+	"svc-ldap-zix" = "ZIX Service Account"
+	"svc-scanner" = "Scanner Service Account"
+	"svc_sophos" = "Sophos Service Account"
+	"svc_sophosxg" = "Sophos Service Account"
+	"svc-maillist" = "Email List Service Account"
+	"ldap" = "LDAP Lookup Service Account"
+	"krbtgt" = "Kerberos AD Service Account"
+	"Guest" = "Guest AD Service Account"
+}
 
 ##############################################################################################################
 #                                                Functions                                                   #
@@ -66,13 +92,13 @@ function Write-Color {
     Accepts an array of strings.
 
     .PARAMETER Color
-    Color of the text. Accepts an array of colors. If more than one color is specified it will loop through colors for each string.
-    If there are more strings than colors it will start from the beginning.
+    Color of the text. Accepts an array of colors. if more than one color is specified it will loop through colors for each string.
+    if there are more strings than colors it will start from the beginning.
     Available colors are: Black, DarkBlue, DarkGreen, DarkCyan, DarkRed, DarkMagenta, DarkYellow, Gray, DarkGray, DarkBlue, Green, Cyan, Red, Magenta, Yellow, White
 
     .PARAMETER BackGroundColor
-    Color of the background. Accepts an array of colors. If more than one color is specified it will loop through colors for each string.
-    If there are more strings than colors it will start from the beginning.
+    Color of the background. Accepts an array of colors. if more than one color is specified it will loop through colors for each string.
+    if there are more strings than colors it will start from the beginning.
     Available colors are: Black, DarkBlue, DarkGreen, DarkCyan, DarkRed, DarkMagenta, DarkYellow, Gray, DarkGray, DarkBlue, Green, Cyan, Red, Magenta, Yellow, White
 
     .PARAMETER Center
@@ -91,13 +117,13 @@ function Write-Color {
     Number of spaces to add before text. Default is 0.
 
     .PARAMETER LogFile
-    Path to log file. If not specified no log file will be created.
+    Path to log file. if not specified no log file will be created.
 
     .PARAMETER DateTimeFormat
     Custom date and time format string. Default is yyyy-MM-dd HH:mm:ss
 
     .PARAMETER LogTime
-    If set to $true it will add time to log file. Default is $true.
+    if set to $true it will add time to log file. Default is $true.
 
     .PARAMETER LogRetry
     Number of retries to write to log file, in case it can't write to it for some reason, before skipping. Default is 2.
@@ -277,10 +303,10 @@ function Write-Color {
 			$Retry++
 			try {
 				if ($LogTime) {
-					"[$([datetime]::Now.ToString($DateTimeFormat))] $TextToFile" | Out-File -FilePath $LogFile -Encoding $Encoding -Append -ErrorAction Stop -WhatIf:$false
+					"[$([datetime]::Now.ToString($DateTimeFormat))] $TextToFile" | Out-File -FilePath $LogFile -Encoding $Encoding -Append -ErrorAction Stop -Whatif:$false
 				}
 				else {
-					"$TextToFile" | Out-File -FilePath $LogFile -Encoding $Encoding -Append -ErrorAction Stop -WhatIf:$false
+					"$TextToFile" | Out-File -FilePath $LogFile -Encoding $Encoding -Append -ErrorAction Stop -Whatif:$false
 				}
 				$Saved = $true
 			}
@@ -297,9 +323,6 @@ function Write-Color {
 }
 
 function Initialize-ImportExcel {
-	# Initialize variably to remove ImportExcel module at end of script as Null
-	$RemoveImportExcel = $Null
-
 	# Check if ImportExcel module is installed
 	if (Get-Module -ListAvailable -Name 'ImportExcel') {
 		Write-Color -Text "ImportExcel module detected. Will save directly to XLSX with automated formatting..." -Color Green -ShowTime
@@ -313,7 +336,7 @@ function Initialize-ImportExcel {
 		if ($AdminSession) {
 			# ImportExcel module is not installed. Ask if allowed to install and user wants to install it.
 			Write-Color -Text 'WARNING: ImportExcel module is not installed. Without it the report will output in CSV and you will have to format it manually.' -Color Yellow -ShowTime
-			Write-Color -Text "If authorized to install modules on this system",", would you like to temporarily install it for this script? ","(Y/N)" -Color Red,White,Yellow -NoNewline -ShowTime; $InstallImportExcel = Read-Host ' '
+			Write-Color -Text "if authorized to install modules on this system,"," would you like to install it for this script? ","(Y/N)" -Color Red,White,Yellow -NoNewline -ShowTime; $InstallImportExcel = Read-Host ' '
 
 			switch ($InstallImportExcel) {
 				"Y" {
@@ -321,32 +344,25 @@ function Initialize-ImportExcel {
 						if ((Get-PSRepository).Name -contains "PSGallery") {
 							if ((Get-PSRepository | Where-Object { $_.Name -eq 'PSGallery' }).InstallationPolicy -eq 'Untrusted') {
 								Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-								$UntrustPSGallery = $True
-							} else {
-								$UntrustPSGallery = $False
-							}
+							} 
 						} else {
 							Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-							$RemovePSGallery = $True
 						}
 
 						if ((Get-PackageProvider).Name -notcontains 'NuGet') {
+							[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 							Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
-							$RemoveNuGet = $True
-						} else {
-							$RemoveNuGet = $False
-						}
-						Write-Color -Text "Installing the ImportExcel module. Please be patient..." -ShowTime
+							Import-PackageProvider -Name NuGet -Force
+						} 
+						Write-Color -Text "Installing the ImportExcel module." -ShowTime
 						Install-Module -Name 'ImportExcel' -Force
 						Import-Module -Name 'ImportExcel'
-						Write-Color -Text "ImportExcel module installed successfully."," It will be removed when this script exits." -Color Green,Yellow -ShowTime
+						Write-Color -Text "ImportExcel module installed successfully." -Color Green -ShowTime
 						$ImportExcel = $True
-						$RemoveImportExcel = $True
 					} catch {
 						Write-Color -Text "ERROR: ImportExcel module failed to install. See the error below. The report will output to CSV only until the error is corrected." -Color Red -ShowTime
 						Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)"," Err Name: ","$($_.Exception.GetType().FullName) "," Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
 						$ImportExcel = $False
-						$RemoveImportExcel = $True
 					}
 				}
 				"N" {
@@ -359,20 +375,20 @@ function Initialize-ImportExcel {
 				}
 			}
 		} else {
-			Write-Color -Text "NOTICE: If authorized to install PowerShell modules on this system you can run this script in an admin session to install the ImportExcel module and save directly to xlsx with automated formatting" -Color Yellow -ShowTime
+			Write-Color -Text "NOTICE: if authorized to install PowerShell modules on this system you can run this script in an admin session to install the ImportExcel module and save directly to xlsx with automated formatting" -Color Yellow -ShowTime
 		}
 	}
 
-	return $ImportExcel,$RemoveImportExcel,$UntrustPSGallery,$RemovePSGallery,$RemoveNuGet
+	return $ImportExcel
 }
 
 function Initialize-Entra {
 	<#
     .DESCRIPTION
     Check if the user wants to connect to Entra ID and process cloud users.
-    If the Microsoft.Graph module is not installed it will prompt the user if they want to install it.
-    If the PSRepository or PackageProvider are modified or the module is installed, it will be removed at the end of the script.
-    If a connection to Entra ID is successful then it grabs all Entra ID users and their relevant properties and a list of all global admins.
+    if the Microsoft.Graph module is not installed it will prompt the user if they want to install it.
+    if the PSRepository or PackageProvider are modified or the module is installed, it will be removed at the end of the script.
+    if a connection to Entra ID is successful then it grabs all Entra ID users and their relevant properties and a list of all global admins.
 
     .PARAMETER RemoveGraphAPI
     Optional parameter to allow the function to be run in a loop until successful connection or the user cancels
@@ -391,26 +407,21 @@ function Initialize-Entra {
     Configures the script to remove the NuGet package manager upon exit
 
     .EXAMPLE
-    [Returning all the output variables without inputting any variables for initial first run of the function]
+    [returning all the output variables without inputting any variables for initial first run of the function]
     $Entra, $PremiumEntraLicense, $AzUsers, $GlobalAdminMembers, $RemoveGraphAPI, $UntrustPSGallery, $RemovePSGallery, $RemoveNuGet = Initialize-Entra
     
-    [To look the function until graph API connection or user cancels]
+	.EXAMPLE
+    [To repeat the function until graph API connection or user cancels]
     Initialize-Entra -RemoveGraphAPI $RemoveGraphAPI -UntrustPSGallery $UntrustPSGallery -RemovePSGallery $RemovePSGallery -RemoveNuGet $RemoveNuGet
     #>
-
-	param(
-		$RemoveGraphAPI = $Null,
-		[boolean]$UntrustPSGallery,
-		[boolean]$RemovePSGallery,
-		[boolean]$RemoveNuGet
-	)
 
 	Write-Color -Text "Would you like to connect to Entra ID? ","(Y/N)" -Color White,Yellow -NoNewline -ShowTime; $EntraID = Read-Host ' '
 	
 	switch ($EntraID) {
 		'Y' {
-			if (Get-Module -ListAvailable -Name 'Microsoft.Graph') {
-				Write-Color -Text "Microsoft.Graph module detected. Connecting to Graph API..." -Color Green -ShowTime
+			$Modules = Get-Module -ListAvailable | Select-Object -ExpandProperty Name
+			if ($Modules -Contains "Microsoft.Graph.Authentication" -and $Modules -Contains "Microsoft.Graph.Users" -and $Modules -Contains "Microsoft.Graph.DirectoryObjects" -and $Modules -Contains "Microsoft.Graph.Identity.DirectoryManagement") {
+				Write-Color -Text "Required Microsoft.Graph modules detected. Connecting to Graph API..." -Color Green -ShowTime
 
 				# Import the ImportExcel module and set the $ImportExcel variable to True
 				Import-Module Microsoft.Graph.Authentication
@@ -423,44 +434,50 @@ function Initialize-Entra {
 				# Check if we are running in an admin session. Otherwise skip trying to install the module and throw a warning to console.
 				if ($AdminSession) {
 					# Graph API module is not installed. Ask if allowed to install and user wants to install it.
-					Write-Color -Text 'WARNING: Graph API module is not installed. The report will display on-premises AD Users only.' -Color Yellow -ShowTime
-					Write-Color -Text "If authorized to install modules on this system",", would you like to temporarily install it for this script? ","(Y/N)" -Color Red,White,Yellow -NoNewline -ShowTime; $InstallGraph = Read-Host ' '
+					Write-Color -Text 'WARNING: Graph API modules required for this report are not installed. The report will display on-premises AD Users only.' -Color Yellow -ShowTime
+					Write-Color -Text "if authorized to install modules on this system,"," would you like to install the required Graph API modules for this script? ","(Y/N)" -Color Red,White,Yellow -NoNewline -ShowTime; $InstallGraph = Read-Host ' '
 
 					switch ($InstallGraph) {
 						"Y" {
 							try {
+								Write-Color -Text "Installing the required Graph API modules." -ShowTime
+
 								if ((Get-PSRepository).Name -contains "PSGallery") {
 									if ((Get-PSRepository | Where-Object { $_.Name -eq 'PSGallery' }).InstallationPolicy -eq 'Untrusted') {
 										Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-										$UntrustPSGallery = $True
-									} else {
-										$UntrustPSGallery = $False
-									}
+									} 
 								} else {
 									Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-									$RemovePSGallery = $True
 								}
 
 								if ((Get-PackageProvider).Name -notcontains "NuGet") {
+									[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 									Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
-									$RemoveNuGet = $True
-								} else {
-									$RemoveNuGet = $False
+									Import-PackageProvider -Name NuGet -Force
+								} 
+								if ($Modules -NotContains 'Microsoft.Graph.Authentication') {
+									Install-Module -Name 'Microsoft.Graph.Authentication' -Force
 								}
-								Install-Module -Name 'Microsoft.Graph' -Force
-								Write-Color -Text "Microsoft.Graph module installed successfully. ","It will be removed when this script exits." -Color Green,Yellow -ShowTime
+								if ($Modules -NotContains 'Microsoft.Graph.Users') {
+									Install-Module -Name 'Microsoft.Graph.Users' -Force
+								}
+								if ($Modules -NotContains 'Microsoft.Graph.DirectoryObjects') {
+									Install-Module -Name 'Microsoft.Graph.DirectoryObjects' -Force
+								}
+								if ($Modules -NotContains 'Microsoft.Graph.Identity.DirectoryManagement') {
+									Install-Module -Name 'Microsoft.Graph.Identity.DirectoryManagement' -Force
+								}
+								Write-Color -Text "Microsoft.Graph modules installed successfully" -Color Green -ShowTime
 								Import-Module Microsoft.Graph.Authentication
 								Import-Module Microsoft.Graph.Users
 								Import-Module Microsoft.Graph.DirectoryObjects
 								Import-Module Microsoft.Graph.Identity.DirectoryManagement
 
 								$GraphAPI = $True
-								$RemoveGraphAPI = $True
 							} catch {
 								Write-Color -Text "ERROR: Microsoft.Graph module failed to install. See the error below. The report will output to CSV only until the error is corrected." -Color Red -ShowTime
 								Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)","Err Name: ","$($_.Exception.GetType().FullName) ","Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
 								$GraphAPI = $False
-								$RemoveGraphAPI = $True
 							}
 						}
 						"N" {
@@ -473,24 +490,24 @@ function Initialize-Entra {
 						}
 					}
 				} else {
-					Write-Color -Text "NOTICE: If authorized to install PowerShell modules on this system you can run this script in an admin session to install the Graph API module and run the audit against cloud users and combine cloud properties with on-prem properties." -Color Yellow -ShowTime
+					Write-Color -Text "NOTICE: if authorized to install PowerShell modules on this system you can run this script in an admin session to install the Graph API module and run the audit against cloud users and combine cloud properties with on-prem properties." -Color Yellow -ShowTime
 				}
 			}
 
-			# If Microsoft.Graph modules were successfully installed
+			# if Microsoft.Graph modules were successfully installed
 			if ($GraphAPI) {
 				try {
 					# Interactive login to the tenant requesting the required permissions only
 					Connect-MgGraph -Scopes 'Directory.Read.All, User.Read.All, AuditLog.Read.All' -NoWelcome -ErrorAction Stop
 					try {
 						# Try to get all users including SignInActivity which is only available with a premium license
-						$AzUsers = Get-MgUser -All -Property Id,UserPrincipalName,SignInActivity,OnPremisesSyncEnabled,displayName,samAccountName,AccountEnabled,mail,lastPasswordChangeDateTime,PasswordPolicies,CreatedDateTime -ErrorAction Stop
+						$AzUsers = Get-MgUser -All -Property Id,UserPrincipalName,SignInActivity,OnPremisesSyncEnabled,displayName,samAccountName,AccountEnabled,mail,lastPasswordChangeDateTime,PasswordPolicies,CreatedDateTime,OnPremisesSyncEnabled,OnPremisesUserPrincipalName,OnPremisesSamAccountName,OnPremisesDomainName,OnPremisesSecurityIdentifier -ErrorAction Stop
 						$PremiumEntraLicense = $True
 					} catch {
-						# If the tenant doesnt have a premium license get all users without including SignInActivity
+						# if the tenant doesnt have a premium license get all users without including SignInActivity
 						if ($_.Exception.Message -like "*Neither tenant is B2C or tenant doesn't have premium license*") {
 							Write-Color -Text "WARNING: This tenant does not have a premium license. LastLogonDate will show on-premises AD datetimes only!" -Color Yellow -ShowTime
-							$AzUsers = Get-MgUser -All -Property Id,UserPrincipalName,OnPremisesSyncEnabled,displayName,samAccountName,AccountEnabled,mail,lastPasswordChangeDateTime,PasswordPolicies,CreatedDateTime -ErrorAction Stop
+							$AzUsers = Get-MgUser -All -Property Id,UserPrincipalName,OnPremisesSyncEnabled,displayName,samAccountName,AccountEnabled,mail,lastPasswordChangeDateTime,PasswordPolicies,CreatedDateTime,OnPremisesSyncEnabled,OnPremisesUserPrincipalName,OnPremisesSamAccountName,OnPremisesDomainName,OnPremisesSecurityIdentifier -ErrorAction Stop
 							$PremiumEntraLicense = $False
 						}
 					}
@@ -507,18 +524,11 @@ function Initialize-Entra {
 							Initialize-Entra -RemoveGraphAPI $RemoveGraphAPI -UntrustPSGallery $UntrustPSGallery -RemovePSGallery $RemovePSGallery -RemoveNuGet $RemoveNuGet
 						}
 						"N" {
-							Write-Color -Text "Graph API module will not be used. ","Report will show on-premises AD users only." -Color White,Yellow -ShowTime
+							Write-Color -Text "Graph API modules will not be used. ","Report will show on-premises AD users only." -Color White,Yellow -ShowTime
 							$Entra = $False
 							$PremiumEntraLicense = $False
 							$AzUsers = $Null
 							$GlobalAdminMembers = $Null
-							if ($RemoveGraphAPI) {
-								Remove-Module -Name 'Microsoft.Graph.Users' -Force
-								Remove-Module -Name 'Microsoft.Graph.DirectoryObjects' -Force
-								Remove-Module -Name 'Microsoft.Graph.Identity.DirectoryManagement' -Force
-								Remove-Module -Name 'Microsoft.Graph.Authentication' -Force
-								Uninstall-Module -Name 'Microsoft.Graph' -Force
-							}
 						}
 					}
 				}
@@ -544,23 +554,256 @@ function Initialize-Entra {
 		}
 	}
 
-	return $Entra,$PremiumEntraLicense,$AzUsers,$GlobalAdminMembers,$RemoveGraphAPI,$UntrustPSGallery,$RemovePSGallery,$RemoveNuGet
+	return $Entra,$PremiumEntraLicense,$AzUsers,$GlobalAdminMembers
+}
+
+function Get-ADServiceAccounts {
+	param (
+		[Parameter(Mandatory = $True)] $ADUsers
+	)
+
+	$FoundServiceAccounts = @{}
+
+	# Get list of managed or group managed service accounts from AD
+	$ADServiceAccounts = Get-ADServiceAccount -Filter *
+
+	# Iterate through MSA or gMSA accounts if any were found
+	if ($ADServiceAccounts.Count -gt 0) {
+		foreach ($ServiceAccount in $ADServiceAccounts) {
+			$FoundServiceAccounts[$ServiceAccount.samAccountName] = "MSA or gMSA Account"
+		}
+	}
+
+	# Iterate through the AD accounts to check if they are known service accounts
+	foreach ($User in $ADUsers) {
+		# Iterate through the keys of the Known Service Accounts dictionary which contains the usernames of the service accounts
+		foreach ($key in $KnownServiceAccounts.Keys) {
+			# if the user is a known service account add it to the Found Service Accounts dictionary
+			if ($KnownServiceAccounts.Keys -contains $User.samAccountName) {
+				$FoundServiceAccounts[$key] = $KnownServiceAccounts[$key]
+			} else {
+				# Generic service account capture based on wildcard name comparison
+				if ($User.samAccountName -like "*svc*") {
+					$FoundServiceAccounts[$User.samAccountName] = "Unknown Generic Service Account"
+				} elseif ($User.samAccountName -like "*MSOL_*") {
+					$FoundServiceAccounts[$User.samAccountName] = "Microsoft Entra ID Connect Service Account"
+				} elseif ($User.samAccountName -like "*AAD_*") {
+					$FoundServiceAccounts[$User.samAccountName] = "Microsoft Entra ID Connect Service Account"
+				} 
+			}
+		}
+	}
+
+	return $FoundServiceAccounts
+}
+
+function Get-RecommendedActions {
+    <#
+    .DESCRIPTION
+    Processes user properties and provides recommendations for the account
+
+    .PARAMETER [string]UserType
+    Defines the type of user account (Cloud, On-Prem, Hybrid).
+
+    .PARAMETER [datetime]AccountExpired
+    Represents the datetime set to the AccountExpired property in AD.
+
+    .PARAMETER [boolean]EnterpriseAdmin
+    Indicates if the account is an enterprise admin (True/False).
+
+    .PARAMETER [boolean]DomainAdmin
+    Indicates if the account is a domain admin (True/False).
+
+    .PARAMETER [boolean]GlobalAdmin
+    Indicates if the account is a global admin (True/False).
+
+    .PARAMETER [datetime]PasswordLastSet
+    Represents the datetime when the password was last set.
+
+    .PARAMETER [datetime]LastLogonDate
+    Represents the datetime when the account was last logged on.
+
+    .PARAMETER [boolean]PasswordNeverExpires
+    Indicates if the password is set to never expire (True/False).
+
+    .PARAMETER [boolean]PasswordExpired
+    Indicates if the password is expired (True/False).
+
+    .PARAMETER [boolean]LockedOut
+    Indicates if the account is locked out (True/False).
+
+    .PARAMETER [boolean]CannotChangePassword
+    Indicates if the account cannot change its password (True/False).
+
+    .PARAMETER [boolean]ServiceAccount
+    Indicates if the account is a service account (True/False).
+
+    .PARAMETER [string]SamAccountName
+    Represents the SAM account name of the user.
+
+    .PARAMETER [string]DistinguishedName
+    Represents the distinguished name of the user in AD.
+    #>
+
+    param(
+        [Parameter(Mandatory = $True)] $UserType,
+        $Enabled = $Null,
+        $AccountExpired = $Null, 
+        $EnterpriseAdmin = $Null, 
+        $DomainAdmin = $Null, 
+        $GlobalAdmin = $Null, 
+        $PasswordLastSet = $Null, 
+        $LastLogonDate = $Null, 
+        $PasswordNeverExpires = $Null, 
+        $PasswordExpired = $Null, 
+        $LockedOut = $Null, 
+        $CannotChangePassword = $Null,
+        $ServiceAccount = $Null,
+        $SamAccountName = $Null,
+        $DistinguishedName = $Null
+    )
+
+    $RecommendedActions = [System.Collections.Generic.List[string]]::new()
+
+    # If account is known service account, skip the rest of the validation checks
+    if ($ServiceAccount) {
+        if ($Enabled -eq $False) {
+            $RecommendedActions.Add("Verify if this service account is needed since it is disabled")
+        } else {
+            # Check for duplicate Entra connect accounts to recommend cleaning them up
+            if ($SamAccountName -like "*MSOL_*" -or $SamAccountName -like "*AAD_*") {
+                $DupSyncUser = [System.Collections.Generic.List[string]]::new()
+                foreach ($User in $ADUsers) {
+                    if ($SamAccountName -like "*MSOL_*" -or $SamAccountName -like "*AAD_*") {
+                        $DupSyncUser.Add($SamAccountName)
+                    }
+                }
+                if ($DupSyncUser.Count -gt 1) {
+                    $RecommendedActions.Add("Multiple Entra Connect Sync accounts found. Verify the current active sync account and old accounts should be disabled and a delta sync ran to verify if the account is still needed for the database or can be removed")
+                    return $RecommendedActions -join "; "
+                }
+            }
+            # If nothing found, then return an empty string
+            return " "
+        }
+    } else {
+        # Account has an expiration date
+        # Account is not enabled. Nothing to recommend.
+        if ($Null -ne $AccountExpired -and $Enabled -eq $False) {
+            # If account is expired and not enabled, then return an empty string
+            return " "
+        # Account is enabled.
+        } elseif ($Null -ne $AccountExpired -and $Enabled -eq $True) {
+            # Expiration date is in the past. Recommend disabling the account.
+            if ($AccountExpired -lt (Get-Date)) {
+                $RecommendedActions.Add("Disable account. Account has already expired")
+                $Recommended = $RecommendedActions -join "; "
+    			return $Recommended
+            # Expiration date is in the future. Recommend verifying the account should expire.
+            } else {
+                $RecommendedActions.Add("Verify if this account should expire")
+            }
+        # Account not set to expire
+        } elseif ($Null -eq $AccountExpired) {
+            # AD User account
+            if ($UserType -eq "On-Prem" -or $UserType -eq "Hybrid") {
+                if ($Enabled -eq $False -and $DisabledOU -eq $True -and $DistinguishedName -notlike "*Disabled User*") {
+                    $RecommendedActions.Add("Create a Disabled Users OU in an Entra Connect synced OU in AD and move this account into it")
+                }
+                if ($EnterpriseAdmin -eq $True -or $DomainAdmin -eq $True -or $GlobalAdmin -eq $True -and $Enabled -eq $False) {
+                    if ($EnterpriseAdmin) {
+                        $RecommendedActions.Add("Check group memberships, account is disabled and a member of Enterprise Admins group")
+                    }
+
+                    if ($DomainAdmin) {
+                        $RecommendedActions.Add("Check group memberships, account is disabled and a member of Domain Admins group")
+                    }
+
+                    if ($GlobalAdmin) {
+                        $RecommendedActions.Add("Check group memberships, account is disabled and a member of Global Admins group")
+                    }
+                } elseif ($EnterpriseAdmin -eq $True -or $DomainAdmin -eq $True -or $GlobalAdmin -eq $True -and $Enabled -eq $True) {
+                    if ($EnterpriseAdmin) {
+                        $RecommendedActions.Add("Verify group memberships, account is member of Enterprise Admins group")
+                    }
+
+                    if ($DomainAdmin) {
+                        $RecommendedActions.Add("Verify group memberships, account is member of Domain Admins group")
+                    }
+
+                    if ($GlobalAdmin) {
+                        $RecommendedActions.Add("Verify group memberships, account is member of Global Admins group")
+                    }
+                }
+
+                if ($PasswordLastSet) {
+                    if ($PasswordLastSet -lt (Get-Date).AddDays(-90)) {
+                        if ($NoExpiry -eq $False) {
+                            $RecommendedActions.Add("Password has not been changed for over 90 days")
+                        }
+                    }
+                }
+
+                if ($LastLogonDate) {
+                    if ($LastLogonDate -lt (Get-Date).AddDays(-90) -and $LastLogonDate -ge (Get-Date).AddDays(-180)) {
+                        $RecommendedActions.Add("Verify if account still needed. Account has not been logged in for over 90 days")
+                    } elseif ($LastLogonDate -lt (Get-Date).AddDays(-180)) {
+                        $RecommendedActions.Add("Verify if account still needed. Account has not been logged in for over 180 days")
+                    }
+                }
+
+                if ($PasswordNeverExpires) {
+                    if ($NoExpiry -eq $False) {
+                        $RecommendedActions.Add("Verify if the password should never expire for this account")
+                    }
+                }
+
+                if ($PasswordExpired -eq $True) {
+                    $RecommendedActions.Add("Verify if this is an active user. The accounts password is expired")
+                }
+
+                if ($LockedOut -eq $True) {
+                    $RecommendedActions.Add("Verify if this is an active user. This account is locked out")
+                }
+
+                if ($CannotChangePassword -eq $True) {
+                    $RecommendedActions.Add("Verify if account should not be able to change their password")
+                }
+            # Cloud only user
+            } else {
+                if ($GlobalAdmin -eq $True -and $Enabled -eq $False) {
+                    if ($GlobalAdmin) {
+                        $RecommendedActions.Add("This user is disabled and a member of Global Admins group, verify if they can be removed from the Global Admins group")
+                    }
+                } elseif ($GlobalAdmin -eq $True -and $Enabled -eq $True) {
+                    if ($GlobalAdmin) {
+                        $RecommendedActions.Add("Verify group memberships, account is member of Global Admins group")
+                    }
+                }
+            }
+        }
+    }
+
+    return $RecommendedActions -join "; "
 }
 
 function Measure-ADUsers {
 	<#
     .DESCRIPTION
     Processes the active directory domain user accounts.
-    If a connection to Entra was established it will only process on on-premises AD user accounts only. Hybrid and cloud users will be processed later.
+    if a connection to Entra was established it will only process on on-premises AD user accounts only. Hybrid and cloud users will be processed later.
 
     .PARAMETER [object]ADUsers
     Collection of all AD Users and all of their properties
 
+	.PARAMETER [boolean]Entra
+    Boolean for if Graph API was used and connected to Entra
+
+	.PARAMETER [object]ServiceAccounts
+    Collection of all found service accounts in AD
+
     .PARAMETER [object]AzUsers
     Collection of all Entra ID Users and their relevent properties
-
-    .PARAMETER [boolean]AzUsersToProcess
-    Array of UserPrincipalNames of all the Cloud users that need to processed by this function
 
     .EXAMPLE
     Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $True
@@ -571,12 +814,13 @@ function Measure-ADUsers {
 	param(
 		[Parameter(Mandatory = $True)] $ADUsers,
 		[Parameter(Mandatory = $True)] [boolean]$Entra,
+		[Parameter(Mandatory = $True)] [object]$ServiceAccounts,
 		$AzUsers
 	)
 
 	# Initialize arrays for UserCollection and AzUsersToProcess
 	$UserCollection = @()
-	$AzUsersToProcess = @()
+	#$AzUsersToProcess = @()
 
 	# Initialize user counter for progress bar
 	$Count = 1
@@ -602,29 +846,40 @@ function Measure-ADUsers {
 				$DomainAdmin = $False
 			}
 
-			# If the account has an account expiration date then consider it expired.
+			# if the account has an account expiration date then consider it expired.
 			if ($Null -ne $User.AccountExpirationDate) {
 				$AccountExpired = $User.AccountExpirationDate
 			} else {
 				$AccountExpired = $Null
 			}
 
-			# If email property is blank then set to a blank space for formatting the spreadsheet. This stops a previous column from displaying over it.
+			# if email property is blank then set to a blank space for formatting the spreadsheet. This stops a previous column from displaying over it.
 			if ($Null -eq $User.mail) {
 				$Mail = " "
 			} else {
 				$Mail = $User.mail
 			}
 
-			# If an Entra connection was successful then process on-prem only users and write the rest to an array to process later
+			# Check if SamAccountName corresponds to a known service account
+			if ($ServiceAccounts.Keys -contains $User.SamAccountName) {
+				$KnownServiceAccount = $True
+			} else {
+				$KnownServiceAccount = $False
+			}
+
 			if ($Entra) {
+
 				# On-prem user without synced cloud user
-				if (($AzUsers).UserPrincipalName -notcontains $User.UserPrincipalName) {
+				if (($AzUsers).OnPremisesSecurityIdentifier -notcontains $User.SID) {
+					# Get recommended actions for the user
+					$Recommended = Get-RecommendedActions -UserType "On-Prem" -Enabled $User.Enabled -AccountExpired $AccountExpired -EnterpriseAdmin $EnterpriseAdmin -DomainAdmin $DomainAdmin -GlobalAdmin $False -PasswordLastSet $User.PasswordLastSet -LastLogonDate $LastLogonDate -PasswordNeverExpires $User.PasswordNeverExpires -PasswordExpired $User.PasswordExpired -LockedOut $User.lockedOut -CannotChangePassword $User.CannotChangePassword -ServiceAccount $KnownServiceAccount -SamAccountName $User.samAccountName -DistinguishedName $User.DistinguishedName
+
 					# Add the user to the UserCollection
 					$UserCollection += [pscustomobject]@{
 						"Name" = $User.DisplayName
 						SamAccountName = $User.SamAccountName
-						UserPrincipalName = $User.UserPrincipalName
+						"On-Prem UserPrincipalName" = $User.UserPrincipalName
+						"Cloud UserPrincipalName" = "N/A"
 						"Email Address" = $Mail
 						"User Type" = "On-Prem"
 						Enabled = $User.Enabled
@@ -632,6 +887,7 @@ function Measure-ADUsers {
 						EnterpriseAdmin = $EnterpriseAdmin
 						DomainAdmin = $DomainAdmin
 						"AzGlobalAdmin" = "N/A"
+						"Known Service Account" = $KnownServiceAccount
 						PasswordLastSet = $User.PasswordLastSet
 						LastLogonDate = $User.LastLogonDate
 						PasswordNeverExpires = $User.PasswordNeverExpires
@@ -639,17 +895,18 @@ function Measure-ADUsers {
 						"Account Locked" = $User.lockedOut
 						CannotChangePassword = $User.CannotChangePassword
 						"Date Created" = $User.whenCreated
+						"Recommended Actions" = $Recommended
 						Notes = ""
 						Action = ""
 						"Follow Up" = ""
 						Resolution = ""
 					}
-					# Otherwise add the user to array AzUsersToProcess to be processed by Merge-AzUsers function
-				} else {
-					$AzUsersToProcess += $User.UserPrincipalName
-				}
-				# No connection to Entra ID. Process active directory users only
+				} 
+			# No connection to Entra ID. Process active directory users only
 			} else {
+				# Get recommended actions for the user
+				$Recommended = Get-RecommendedActions -UserType "On-Prem" -Enabled $User.Enabled -AccountExpired $AccountExpired -EnterpriseAdmin $EnterpriseAdmin -DomainAdmin $DomainAdmin -GlobalAdmin $False -PasswordLastSet $User.PasswordLastSet -LastLogonDate $LastLogonDate -PasswordNeverExpires $User.PasswordNeverExpires -PasswordExpired $User.PasswordExpired -LockedOut $User.lockedOut -CannotChangePassword $User.CannotChangePassword -ServiceAccount $KnownServiceAccount -SamAccountName $User.samAccountName -DistinguishedName $User.DistinguishedName
+
 				# Add the user to the UserCollection
 				$UserCollection += [pscustomobject]@{
 					"Name" = $User.DisplayName
@@ -661,6 +918,7 @@ function Measure-ADUsers {
 					AccountExpiredDate = $AccountExpired
 					EnterpriseAdmin = $EnterpriseAdmin
 					DomainAdmin = $DomainAdmin
+					"Known Service Account" = $KnownServiceAccount
 					PasswordLastSet = $User.PasswordLastSet
 					LastLogonDate = $User.LastLogonDate
 					PasswordNeverExpires = $User.PasswordNeverExpires
@@ -668,6 +926,7 @@ function Measure-ADUsers {
 					"Account Locked" = $User.lockedOut
 					CannotChangePassword = $User.CannotChangePassword
 					"Date Created" = $User.whenCreated
+					"Recommended Actions" = $Recommended
 					Notes = ""
 					Action = ""
 					"Follow Up" = ""
@@ -679,7 +938,7 @@ function Measure-ADUsers {
 		}
 	}
 
-	return $UserCollection, $AzUsersToProcess
+	return $UserCollection
 }
 
 function Merge-AzUsers {
@@ -695,21 +954,18 @@ function Merge-AzUsers {
     .PARAMETER [object]AzUsers
     Collection of all Entra ID Users and their relevent properties
 
-    .PARAMETER [array]AzUsersToProcess
-    Array of UserPrincipalNames of all the Cloud users that need to processed by this function
-
     .PARAMETER [object]UserCollection
     Collection of all users that have already been processed
 
     .EXAMPLE
-    Merge-AzUsers $ADUsers $AzUsers $AzUsersToProcess $UserCollection
+    Merge-AzUsers $ADUsers $AzUsers $UserCollection $ServiceAccounts
     #>
 
 	param(
-		[Parameter(Mandatory = $True)] $ADUsers,
-		[Parameter(Mandatory = $True)] $AzUsers,
-		[Parameter(Mandatory = $True)] $AzUsersToProcess,
-		[Parameter(Mandatory = $True)] $UserCollection
+		[Parameter(Mandatory = $True)] [object]$ADUsers,
+		[Parameter(Mandatory = $True)] [object]$AzUsers,
+		[Parameter(Mandatory = $True)] [object]$UserCollection,
+		[Parameter(Mandatory = $True)] [object]$ServiceAccounts
 	)
 
 	# Initialize user counter for progress bar
@@ -720,9 +976,15 @@ function Merge-AzUsers {
 	foreach ($AzUser in $AzUsers) {
 		Write-Progress -Id 1 -Activity "Processing Entra Users" -Status "Current Count: ($Count/$($AzUsers.Count))" -PercentComplete (($Count / $AzUsers.Count) * 100) -CurrentOperation "Processing... $($AzUser.DisplayName)"
 
-		# On-Prem user with synced cloud user
-		if ($AzUsersToProcess -contains $AzUser.UserPrincipalName) {
-			$User = $ADUsers | Where-Object { $_.UserPrincipalName -eq $AzUser.UserPrincipalName }
+		# Hybrid user
+		if ($AzUser.OnPremisesSyncEnabled -eq $True) {
+			$User = $ADUsers | Where-Object { $_.SID -eq $AzUser.OnPremisesSecurityIdentifier }
+
+			if ($Null -eq $User.Enabled) {
+				$Enabled = $AzUser.AccountEnabled
+			} else {
+				$Enabled = $User.Enabled
+			}
 
 			# Check the users samAccountName against the list of Admin Users to verify if they are a domain admin
 			if (($EnterpriseAdmins.SamAccountName) -contains $User.SamAccountName) {
@@ -738,7 +1000,7 @@ function Merge-AzUsers {
 				$DomainAdmin = $False
 			}
 
-			# If the account has an account expiration date then consider it expired.
+			# if the account has an account expiration date then consider it expired.
 			if ($Null -ne $User.AccountExpirationDate) {
 				$AccountExpired = $User.AccountExpirationDate
 			} else {
@@ -752,45 +1014,57 @@ function Merge-AzUsers {
 				$GlobalAdmin = $False
 			}
 
-			# If email property is blank then set to a blank space for formatting the spreadsheet. This stops a previous column from displaying over it.
+			# Check if user is a known service account
+			if ($ServiceAccounts.Keys -contains $User.SamAccountName) {
+				$KnownServiceAccount = $True
+			} else {
+				$KnownServiceAccount = $False
+			}
+
+			# if email property is blank then set to a blank space for formatting the spreadsheet. This stops a previous column from displaying over it.
 			if ($Null -eq $User.mail) {
 				$Mail = " "
 			} else {
 				$Mail = $User.mail
 			}
 
-			# If the tenant has a premium license then get and compare the last sign-in timestamp and lastLogonDate timestamp
+			# if the tenant has a premium license then get and compare the last sign-in timestamp and lastLogonDate timestamp
 			if ($PremiumEntraLicense) {
 				if ($AzUser.signInActivity.lastSignInDateTime) {
 					$AzlastLogonDate = [datetime]$AzUser.signInActivity.lastSignInDateTime
-					# If the last sign-in timestamp is newer than set that as lastLogonDate property
+					# if the last sign-in timestamp is newer than set that as lastLogonDate property
 					if ($User.LastLogonDate -lt $AzlastLogonDate) {
 						$LastLogonDate = $AzlastLogonDate
 						# Otherwise use the active directory lastLogonDate timestamp
 					} else {
 						$LastLogonDate = $User.LastLogonDate
 					}
-					# If there is no last sign-in timestamp then default to AD lastLogonDate timestamp.
+					# if there is no last sign-in timestamp then default to AD lastLogonDate timestamp.
 				} else {
 					$LastLogonDate = $User.LastLogonDate
 				}
-				# If the tenant doesnt have a premium license then we cant get last sign-in timestamp. Default to AD lastLogonDate timestamp.
+				# if the tenant doesnt have a premium license then we cant get last sign-in timestamp. Default to AD lastLogonDate timestamp.
 			} else {
 				$LastLogonDate = $User.LastLogonDate
 			}
 
+			# Get the recommended actions for the user
+			$Recommended = Get-RecommendedActions -UserType "Hybrid" -Enabled $User.Enabled -AccountExpired $AccountExpired -EnterpriseAdmin $EnterpriseAdmin -DomainAdmin $DomainAdmin -GlobalAdmin $GlobalAdmin -PasswordLastSet $User.PasswordLastSet -LastLogonDate $LastLogonDate -PasswordNeverExpires $User.PasswordNeverExpires -PasswordExpired $User.PasswordExpired -LockedOut $User.lockedOut -CannotChangePassword $User.CannotChangePassword -ServiceAccount $KnownServiceAccount -SamAccountName $User.samAccountName -DistinguishedName $User.DistinguishedName
+			
 			# Add the user to the UserCollection
 			$UserCollection += [pscustomobject]@{
 				"Name" = $User.DisplayName
 				SamAccountName = $User.SamAccountName
-				UserPrincipalName = $User.UserPrincipalName
+				"On-Prem UserPrincipalName" = $User.UserPrincipalName
+				"Cloud UserPrincipalName" = $AzUser.UserPrincipalName
 				"Email Address" = $Mail
 				"User Type" = "Hybrid"
-				Enabled = $User.Enabled
+				Enabled = $Enabled
 				AccountExpiredDate = $AccountExpired
 				EnterpriseAdmin = $EnterpriseAdmin
 				DomainAdmin = $DomainAdmin
 				"AzGlobalAdmin" = $GlobalAdmin
+				"Known Service Account" = $KnownServiceAccount
 				PasswordLastSet = $User.PasswordLastSet
 				LastLogonDate = $LastLogonDate
 				PasswordNeverExpires = $User.PasswordNeverExpires
@@ -798,13 +1072,14 @@ function Merge-AzUsers {
 				"Account Locked" = $User.lockedOut
 				CannotChangePassword = $User.CannotChangePassword
 				"Date Created" = $User.whenCreated
+				"Recommended Actions" = $Recommended
 				Notes = ""
 				Action = ""
 				"Follow Up" = ""
 				Resolution = ""
 			}
 
-			# Cloud only user
+		# Cloud only user
 		} else {
 			# Check if user is a global admin in Entra ID
 			if (($GlobalAdminMembers).UserPrincipalName -contains $AzUser.UserPrincipalName) {
@@ -813,7 +1088,14 @@ function Merge-AzUsers {
 				$GlobalAdmin = $False
 			}
 
-			# If the tenant has a premium license then grab the last sign-in timestamp
+			# Check if user is a known cloud Sync_ service account
+			if ($AzUser.UserPrincipalName -like "*Sync_*") {
+				$KnownServiceAccount = $True
+			} else {
+				$KnownServiceAccount = $False
+			}
+
+			# if the tenant has a premium license then grab the last sign-in timestamp
 			if ($PremiumEntraLicense) {
 				if ($AzUser.signInActivity.lastSignInDateTime) {
 					$LastLogonDate = [datetime]$AzUser.signInActivity.lastSignInDateTime
@@ -824,32 +1106,43 @@ function Merge-AzUsers {
 				$LastLogonDate = $Null
 			}
 
-			# If string found in PasswordPolicies then the password is set to never expire
-			if ($AzUser.PasswordPolicies -contains "DisablePasswordExpiration") {
+			# Check if password expiration is configured for the tenant. A value of 2147483647 indicates passwords dont expire.
+			if (($AzDomains | Where-Object {$_.Id -eq ($AzUser.UserPrincipalName).Split("@")[1]} | Select-Object -ExpandProperty PasswordValidityPeriodInDays) -eq 2147483647) {
 				$PasswordNeverExpires = $True
+			# Else a password policy is defined and we need to check if the individual account has an exception set in the PasswordPolicies property for their account
 			} else {
-				$PasswordNeverExpires = $False
+				# If DisablePasswordExpiration found in PasswordPolicies then the password is set to never expire in the cloud
+				if ($AzUser.PasswordPolicies -like "*DisablePasswordExpiration*") {
+					$PasswordNeverExpires = $True
+				} else {
+					$PasswordNeverExpires = $False
+				}
 			}
 
-			# If email property is blank then set to a blank space for formatting the spreadsheet. This stops a previous column from displaying over it.
+			# if email property is blank then set to a blank space for formatting the spreadsheet. This stops a previous column from displaying over it.
 			if ($Null -eq $AzUser.mail) {
 				$Mail = " "
 			} else {
 				$Mail = $AzUser.mail
 			}
 
+			# Get the recommended actions for the user
+			$Recommended = Get-RecommendedActions -UserType "Cloud" -Enabled $User.Enabled -AccountExpired $AccountExpired -EnterpriseAdmin $EnterpriseAdmin -DomainAdmin $DomainAdmin -GlobalAdmin $GlobalAdmin -PasswordLastSet $User.PasswordLastSet -LastLogonDate $LastLogonDate -PasswordNeverExpires $User.PasswordNeverExpires -PasswordExpired $User.PasswordExpired -LockedOut $User.lockedOut -CannotChangePassword $User.CannotChangePassword -ServiceAccount $KnownServiceAccount
+
 			# Add the user to the UserCollection
 			$UserCollection += [pscustomobject]@{
 				"Name" = $AzUser.DisplayName
 				SamAccountName = "N/A"
-				UserPrincipalName = $AzUser.UserPrincipalName
+				"On-Prem UserPrincipalName" = "N/A"
+				"Cloud UserPrincipalName" = $AzUser.UserPrincipalName
 				"Email Address" = $Mail
 				"User Type" = "Cloud"
 				Enabled = $AzUser.AccountEnabled
 				AccountExpiredDate = "N/A"
 				EnterpriseAdmin = $False
-				DomainAdmin = $False
+				DomainAdmin = "N/A"
 				"AzGlobalAdmin" = $GlobalAdmin
+				"Known Service Account" = $KnownServiceAccount
 				PasswordLastSet = $AzUser.lastPasswordChangeDateTime
 				LastLogonDate = $LastLogonDate
 				PasswordNeverExpires = $PasswordNeverExpires
@@ -857,6 +1150,7 @@ function Merge-AzUsers {
 				"Account Locked" = "N/A"
 				CannotChangePassword = "N/A"
 				"Date Created" = $AzUser.CreatedDateTime
+				"Recommended Actions" = $Recommended
 				Notes = ""
 				Action = ""
 				"Follow Up" = ""
@@ -874,6 +1168,7 @@ function Merge-AzUsers {
 ##############################################################################################################
 #                                                   Main                                                     #
 ##############################################################################################################
+# Register the exit event to cleanup modules after the session has ended.
 try {
 	Clear-Host
 	Write-Color -Text "__________________________________________________________________________________________" -Color White -BackgroundColor Black -HorizontalCenter $True -LinesBefore 7
@@ -892,6 +1187,7 @@ try {
 	Write-Color -Text "Script: ","User Audit Report" -Color Yellow,White -HorizontalCenter $True -LinesBefore 1
 	Write-Color -Text "Author: " ,"Mark Newton" -Color Yellow,White -HorizontalCenter $True -LinesAfter 1
 
+	# Check if PowerShell is at least v5. That is the version that is used by default in Windows since Windows 7 and Server 2012.
 	if ($PSVersionTable.PSVersion.Major -lt 5) {
 		$ImportExcel = $False
 		$Entra = $False
@@ -901,6 +1197,14 @@ try {
 		$SupportedPS = $True
 	}
 
+	# Check if powershell is running in an admin session for the ability to install modules
+	$currentPrincipal = New-Object Security.Principal.WindowsPrincipal ([Security.Principal.WindowsIdentity]::GetCurrent())
+	$AdminSession = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+	# Initialize default value for checking if a disabled users OU exists in AD. This will later be set to True if one exists.
+	$DisabledOU = $False
+
+	# Check if we can import the active directory module. if not, then we can only produce a report for cloud users with the Graph API
 	try {
 		Import-Module ActiveDirectory
 		$ActiveDirectory = $True
@@ -915,34 +1219,27 @@ try {
 		}
 	}
 
+	# if a supported version of PS was found, check with the user if they want to install and use ImportExcel module for automatic formatting and/or use Entra to report for cloud users
 	if ($SupportedPS) {
 		Write-Color -Text "Checking for optional but recommended PowerShell modules" -ShowTime
 
 		# Check for and prompt to install ImportExcel module
-		$ImportExcel,$RemoveImportExcel,$IEUntrustPSGallery,$IERemovePSGallery,$IERemoveNuGet = Initialize-ImportExcel
+		$ImportExcel = Initialize-ImportExcel
 
 		# Check for and prompt to install Microsoft.Graph module and connect to Entra ID
-		$Entra,$PremiumEntraLicense,$AzUsers,$GlobalAdminMembers,$RemoveGraphAPI,$MgUntrustPSGallery,$MgRemovePSGallery,$MgRemoveNuGet = Initialize-Entra
-	}
-
-	# If either value is true, set the PSGallery back to untrusted at script exit
-	if ($IEUntrustPSGallery -or $MgUntrustPSGallery) {
-		$UntrustPSGallery = $True
-	}
-
-	# If either value is true, set the PSGallery to be removed at script exit
-	if ($IERemovePSGallery -or $MgRemovePSGallery) {
-		$RemovePSGallery = $True
-	}
-
-	# If either value is true, remove the NuGet package manager at script exit
-	if ($IERemoveNuGet -or $MgRemoveNuGet) {
-		$RemoveNuGet = $True
+		$Entra,$PremiumEntraLicense,$AzUsers,$GlobalAdminMembers = Initialize-Entra
 	}
 
 	if ($ActiveDirectory) {
 		# Get the domain name
 		$DomainName = (Get-ADDomain).DNSRoot
+
+		# Check if Disabled Users OU exists
+		if (Get-ADOrganizationalUnit -Filter 'Name -like "*"' | Where-Object {$_.Name -like "*Disabled User*"}) {
+			$DisabledOU = $True
+		} Else {
+			$DisabledOU = $False
+		}
 
 		# Get the Enterprise Admins group members
 		$EnterpriseAdmins = Get-ADGroupMember -Identity "Enterprise Admins"
@@ -953,26 +1250,31 @@ try {
 		# Get all AD users with all of their properties
 		$ADUsers = Get-ADUser -Filter * -Properties *
 
-		If ($Entra) {
-			# Process the AD users. If Entra is enabled then process on-prem AD users only and log hybrid users for processing with Merge-AzUsers.
-			$ProcessedADUsers, $AzUsersToProcess = Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra
-		} Else {
-			# Process the AD users. If Entra is disabled then process on-prem AD users only.
-			$ProcessedADUsers, $AzUsersToProcess = Measure-ADUsers -ADUsers $ADUsers -Entra $Entra
+		# Get a list of all service accounts we can find on the domain
+		$FoundServiceAccounts = Get-ADServiceAccounts -ADUsers $ADUsers
+
+		if ($Entra) {
+			# Get a list of all domains in Azure so we can use this to verify if synced users have a different UPN in the cloud compared to
+			$AzDomains = Get-MgDomain
+			# Process the AD users. if Entra is enabled then process on-prem AD users only and log hybrid users for processing with Merge-AzUsers.
+			$ProcessedADUsers = Measure-ADUsers -ADUsers $ADUsers -AzUsers $AzUsers -Entra $Entra -ServiceAccounts $FoundServiceAccounts
+		} else {
+			# Process the AD users. if Entra is disabled then process on-prem AD users only.
+			$ProcessedADUsers = Measure-ADUsers -ADUsers $ADUsers -Entra $Entra -ServiceAccounts $FoundServiceAccounts
 		}
+	# Initiaize variable and hashtable defaults if Active Directory if only generating a cloud user report
 	} else {
 		$DomainName = (Get-MgDomain | Where-Object {$_.IsDefault -eq $True}).Id
 		$EnterpriseAdmins = @()
 		$DomainAdmins = @()
 		$ADUsers = @()
 		$ProcessedADUsers = @()
-		$AzUsersToProcess = @()
 	}
 
 	if ($Entra) {
-		# If Entra is enabled, process hybrid and cloud only users and merge LastLogonDate for hybrid users.
-		$UserCollection = Merge-AzUsers -ADUsers $ADUsers -AzUsers $AzUsers -AzUsersToProcess $AzUsersToProcess -UserCollection $ProcessedADUsers
-	} Else {
+		# if Entra is enabled, process hybrid and cloud only users and merge LastLogonDate for hybrid users.
+		$UserCollection = Merge-AzUsers -ADUsers $ADUsers -AzUsers $AzUsers -UserCollection $ProcessedADUsers -ServiceAccounts $FoundServiceAccounts
+	} else {
 		$UserCollection = $ProcessedADUsers
 	}
 
@@ -996,12 +1298,109 @@ try {
 		Set-ExcelRange -Worksheet $Worksheet -Range "A:Z" -FontSize 8 -AutoSize -BorderAround Thin
 
 		if ($Entra) {
-			# Center align rows that will have "N/A" for a cleaner look
-			Set-ExcelRange -Worksheet $Worksheet -Range "G:G" -HorizontalAlignment Center -NumberFormat "MM/dd/yyyy hh:mm AM/PM"
-			Set-ExcelRange -Worksheet $Worksheet -Range "J:J" -HorizontalAlignment Center
-			Set-ExcelRange -Worksheet $Worksheet -Range "N:N" -HorizontalAlignment Center
-			Set-ExcelRange -Worksheet $Worksheet -Range "O:O" -HorizontalAlignment Center
+			#foreach ($User in $SortedCollection) {
+			#	
+			#}
+
+			# Center align rows that will have "N/A" for a cleaner look and configured number formatting for date ranges
+			# AccountExpired
+			Set-ExcelRange -Worksheet $Worksheet -Range "H:H" -HorizontalAlignment Center -NumberFormat "MM/dd/yyyy hh:mm AM/PM"
+			Set-ExcelRange -Worksheet $Worksheet -Range "H1:H1" -HorizontalAlignment Left
+			Set-ExcelRange -Worksheet $Worksheet -Range "H:H" -Width 16
+			# Domain Admin
+			Set-ExcelRange -Worksheet $Worksheet -Range "J:J" -HorizontalAlignment Center 
+			Set-ExcelRange -Worksheet $Worksheet -Range "J1:J1" -HorizontalAlignment Left
+			# Global Admin
+			Set-ExcelRange -Worksheet $Worksheet -Range "K:K" -HorizontalAlignment Center
+			Set-ExcelRange -Worksheet $Worksheet -Range "K1:K1" -HorizontalAlignment Left
+			# KnownServiceAccount
+			Set-ExcelRange -Worksheet $Worksheet -Range "L:L" -HorizontalAlignment Center
+			Set-ExcelRange -Worksheet $Worksheet -Range "L1:L1" -HorizontalAlignment Left
+			# PasswordLastSet
+			Set-ExcelRange -Worksheet $Worksheet -Range "M:M" -Width 16
+			Set-ExcelRange -Worksheet $Worksheet -Range "M:M" -HorizontalAlignment Center -NumberFormat "MM/dd/yyyy hh:mm AM/PM"
+			Set-ExcelRange -Worksheet $Worksheet -Range "M1:M1" -HorizontalAlignment Left
+			# LastLogonDate
+			Set-ExcelRange -Worksheet $Worksheet -Range "N:N" -Width 16
+			Set-ExcelRange -Worksheet $Worksheet -Range "N:N" -HorizontalAlignment Center -NumberFormat "MM/dd/yyyy hh:mm AM/PM"
+			Set-ExcelRange -Worksheet $Worksheet -Range "N1:N1" -HorizontalAlignment Left
+			# Password Expired
 			Set-ExcelRange -Worksheet $Worksheet -Range "P:P" -HorizontalAlignment Center
+			Set-ExcelRange -Worksheet $Worksheet -Range "P1:P1" -HorizontalAlignment Left
+			# Account Locked
+			Set-ExcelRange -Worksheet $Worksheet -Range "Q:Q" -HorizontalAlignment Center
+			Set-ExcelRange -Worksheet $Worksheet -Range "Q1:Q1" -HorizontalAlignment Left
+			# CannotChangePassword
+			Set-ExcelRange -Worksheet $Worksheet -Range "R:R" -HorizontalAlignment Center
+			Set-ExcelRange -Worksheet $Worksheet -Range "R1:R1" -HorizontalAlignment Left
+			# DateCreated
+			Set-ExcelRange -Worksheet $Worksheet -Range "S:S" -Width 16
+			Set-ExcelRange -Worksheet $Worksheet -Range "S:S" -HorizontalAlignment Center -NumberFormat "MM/dd/yyyy hh:mm AM/PM"
+			Set-ExcelRange -Worksheet $Worksheet -Range "S1:S1" -HorizontalAlignment Left
+
+			# Add conditional formatting to the data in the columns
+			# Enabled Column
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "G2:G$lastCol" -RuleType Equal -ConditionValue $False -BackgroundColor Yellow
+			# AccountExpired
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "H2:H$lastCol" -RuleType Equal -ConditionValue "N/A" -StopifTrue
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "H2:H$lastCol" -RuleType NotContainsBlanks -BackgroundColor Yellow
+			# Enterprise Admin
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "I2:I$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
+			# Domain Admin
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "J2:J$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
+			# Global Admin
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "K2:K$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
+			# Known Service Account
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "L2:L$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
+			# PasswordLastSet
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "M2:M$lastCol" -RuleType Expression -ConditionValue "=`$N2<=(TODAY()-90)" -BackgroundColor Yellow -Bold
+			# LastLogonDate
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "N2:N$lastCol" -RuleType Expression -ConditionValue "=`$N2<=(TODAY()-180)" -BackgroundColor Red -Bold
+			# LastLogonDate
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "N2:N$lastCol" -RuleType Expression -ConditionValue "=`=AND(`$N2 > TODAY()-180, `$N2 < TODAY()-90)" -BackgroundColor Yellow
+			# LastLogonDate
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "N2:N$lastCol" -RuleType Expression -ConditionValue "=`$N2>=(TODAY()-90)" -BackgroundColor LightGreen
+			# PasswordNeverExpires
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "O2:O$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Red -Bold
+			# PasswordExpired
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "P2:P$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
+			# Account Locked
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "Q2:Q$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
+			# CannotChangePassword
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "R2:R$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
+		} else {
+			# Center align rows that will have "N/A" for a cleaner look and configured number formatting for date ranges
+			# AccountExpired
+			Set-ExcelRange -Worksheet $Worksheet -Range "G:G" -HorizontalAlignment Center -NumberFormat "MM/dd/yyyy hh:mm AM/PM"
+			Set-ExcelRange -Worksheet $Worksheet -Range "G1:G1" -HorizontalAlignment Left
+			Set-ExcelRange -Worksheet $Worksheet -Range "G:G" -Width 16
+			# Domain Admin
+			Set-ExcelRange -Worksheet $Worksheet -Range "I:I" -HorizontalAlignment Center
+			Set-ExcelRange -Worksheet $Worksheet -Range "I1:I1" -HorizontalAlignment Left
+			# KnownServiceAccount
+			Set-ExcelRange -Worksheet $Worksheet -Range "J:J" -HorizontalAlignment Center
+			Set-ExcelRange -Worksheet $Worksheet -Range "J1:J1" -HorizontalAlignment Left
+			# PasswordLastSet
+			Set-ExcelRange -Worksheet $Worksheet -Range "K:K" -HorizontalAlignment Center -NumberFormat "MM/dd/yyyy hh:mm AM/PM"
+			Set-ExcelRange -Worksheet $Worksheet -Range "K1:K1" -HorizontalAlignment Left
+			Set-ExcelRange -Worksheet $Worksheet -Range "K:K" -Width 16
+			# LastLogonDate
+			Set-ExcelRange -Worksheet $Worksheet -Range "L:L" -HorizontalAlignment Center -NumberFormat "MM/dd/yyyy hh:mm AM/PM"
+			Set-ExcelRange -Worksheet $Worksheet -Range "L1:L1" -HorizontalAlignment Left
+			Set-ExcelRange -Worksheet $Worksheet -Range "L:L" -Width 16
+			# Password Expired
+			Set-ExcelRange -Worksheet $Worksheet -Range "N:N" -HorizontalAlignment Center
+			Set-ExcelRange -Worksheet $Worksheet -Range "N1:N1" -HorizontalAlignment Left
+			# Account Locked
+			Set-ExcelRange -Worksheet $Worksheet -Range "O:O" -HorizontalAlignment Center
+			Set-ExcelRange -Worksheet $Worksheet -Range "O1:O1" -HorizontalAlignment Left
+			# CannotChangePassword
+			Set-ExcelRange -Worksheet $Worksheet -Range "P:P" -HorizontalAlignment Center
+			Set-ExcelRange -Worksheet $Worksheet -Range "P1:P1" -HorizontalAlignment Left
+			# DateCreated
+			Set-ExcelRange -Worksheet $Worksheet -Range "Q:Q" -HorizontalAlignment Center -NumberFormat "MM/dd/yyyy hh:mm AM/PM"
+			Set-ExcelRange -Worksheet $Worksheet -Range "Q1:Q1" -HorizontalAlignment Left
+			Set-ExcelRange -Worksheet $Worksheet -Range "Q:Q" -Width 16
 
 			# Add conditional formatting to the data in the columns
 			# Enabled Column
@@ -1010,12 +1409,12 @@ try {
 			Add-ConditionalFormatting -Worksheet $Worksheet -Address "G2:G$lastCol" -RuleType NotContainsBlanks -BackgroundColor Yellow
 			# Enterprise Admin
 			Add-ConditionalFormatting -Worksheet $Worksheet -Address "H2:H$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
-			# Domain Admin
+			# DomainAdmin
 			Add-ConditionalFormatting -Worksheet $Worksheet -Address "I2:I$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
-			# Global Admin
+			# Known Service Account
 			Add-ConditionalFormatting -Worksheet $Worksheet -Address "J2:J$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
 			# PasswordLastSet
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "K2:K$lastCol" -RuleType Expression -ConditionValue "=`$K2<=(TODAY()-90)" -BackgroundColor Yellow -Bold
+			Add-ConditionalFormatting -Worksheet $Worksheet -Address "K2:K$lastCol" -RuleType Expression -ConditionValue "=`$K2<=(TODAY()-90)" -BackgroundColor Red -Bold
 			# LastLogonDate
 			Add-ConditionalFormatting -Worksheet $Worksheet -Address "L2:L$lastCol" -RuleType Expression -ConditionValue "=`$L2<=(TODAY()-180)" -BackgroundColor Red -Bold
 			# LastLogonDate
@@ -1030,32 +1429,6 @@ try {
 			Add-ConditionalFormatting -Worksheet $Worksheet -Address "O2:O$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
 			# CannotChangePassword
 			Add-ConditionalFormatting -Worksheet $Worksheet -Address "P2:P$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
-		} else {
-			# Add conditional formatting to the data in the columns
-			# Enabled Column
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "F2:F$lastCol" -RuleType Equal -ConditionValue $False -BackgroundColor Yellow
-			# AccountExpired
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "G2:G$lastCol" -RuleType NotContainsBlanks -BackgroundColor Yellow
-			# Enterprise Admin
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "H2:H$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
-			# DomainAdmin
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "I2:I$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor LightGreen -Bold
-			# PasswordLastSet
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "J2:J$lastCol" -RuleType Expression -ConditionValue "=`$J2<=(TODAY()-90)" -BackgroundColor Red -Bold
-			# LastLogonDate
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "K2:K$lastCol" -RuleType Expression -ConditionValue "=`$K2<=(TODAY()-180)" -BackgroundColor Red -Bold
-			# LastLogonDate
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "K2:K$lastCol" -RuleType Expression -ConditionValue "=`=AND(`$K2 > TODAY()-180, `$K2 < TODAY()-90)" -BackgroundColor Yellow
-			# LastLogonDate
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "K2:K$lastCol" -RuleType Expression -ConditionValue "=`$K2>=(TODAY()-90)" -BackgroundColor LightGreen
-			# PasswordNeverExpires
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "L2:L$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Red -Bold
-			# PasswordExpired
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "M2:M$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
-			# Account Locked
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "N2:N$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
-			# CannotChangePassword
-			Add-ConditionalFormatting -Worksheet $Worksheet -Address "O2:O$lastCol" -RuleType Equal -ConditionValue $True -BackgroundColor Yellow
 		}
 		Close-ExcelPackage $XLSX
 	} else {
@@ -1064,38 +1437,25 @@ try {
 		$SortedCollection | Export-Csv -Path $FileName -NoTypeInformation
 	}
 
+	# Write comments to the PowerShell session
 	Write-Color -Text "Report successfully saved to: ","$FileName" -Color Green,White -ShowTime
-	Write-Color -Text "Stay classy, Aunalytics" -Color Blue -HorizontalCenter $True -LinesBefore 1
+	If ($ImportExcel -or $Entra) {
+		Write-Color -Text "You can remove the installed modules by closing this PowerShell session and running the below commands in a new PowerShell Admin session:" -Color DarkYellow -ShowTime -LinesBefore 1
+		If ($ImportExcel) {
+			Write-Color -Text "Uninstall-Module -Name 'ImportExcel' -Force" -Color DarkYellow -ShowTime
+		}
+		If ($Entra) {
+			Write-Color -Text "Uninstall-Module -Name 'Microsoft.Graph.Authentication' -Force" -Color DarkYellow -ShowTime
+			Write-Color -Text "Uninstall-Module -Name 'Microsoft.Graph.Users' -Force" -Color DarkYellow -ShowTime
+			Write-Color -Text "Uninstall-Module -Name 'Microsoft.Graph.DirectoryObjects' -Force" -Color DarkYellow -ShowTime
+			Write-Color -Text "Uninstall-Module -Name 'Microsoft.Graph.Identity.DirectoryManagement' -Force" -Color DarkYellow -ShowTime
+		}
+	}
+	Write-Color -Text "Stay classy, Aunalytics" -Color Cyan -HorizontalCenter $True -LinesBefore 1
 } catch {
 	Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)","Err Name: ","$($_.Exception.GetType().FullName) ","Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
 } finally {
-	# When the script exits revert all packageprovider and repository changes and remove installed modules if not previously installed
-	try {
-		if ($UntrustPSGallery) {
-			Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted
-		}
-
-		if ($RemovePSGallery) {
-			Unregister-PSRepository -Name 'PSGallery'
-		}
-
-		if ($RemoveImportExcel) {
-			Remove-Module -Name 'ImportExcel' -Force
-			Uninstall-Module -Name 'ImportExcel' -Force
-		}
-
-		if ($RemoveGraphAPI) {
-			Remove-Module -Name 'Microsoft.Graph.Users' -Force
-			Remove-Module -Name 'Microsoft.Graph.DirectoryObjects' -Force
-			Remove-Module -Name 'Microsoft.Graph.Identity.DirectoryManagement' -Force
-			Remove-Module -Name 'Microsoft.Graph.Authentication' -Force
-			Uninstall-Module -Name 'Microsoft.Graph' -Force
-		}
-
-		if ($RemoveNuGet) {
-			Uninstall-PackageProvider -Name NuGet -Force
-		}
-	} catch {
-		Write-Color -Text "Err Line: ","$($_.InvocationInfo.ScriptLineNumber)"," Err Name: ","$($_.Exception.GetType().FullName) "," Err Msg: ","$($_.Exception.Message)" -Color Red,Magenta,Red,Magenta,Red,Magenta -ShowTime
-	}
+	Write-Host -NoNewLine 'Press any key to exit...';
+	$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown');
+	Exit 0
 }
