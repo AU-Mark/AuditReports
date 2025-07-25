@@ -154,28 +154,19 @@ C:\Temp\yourdomain.com_Users_Report_12302024_1430.xlsx
 
 ## 📦 Installation
 
-### Method 1: Clone Repository
-```bash
-git clone https://github.com/yourusername/user-audit-report.git
-cd user-audit-report
-```
-
-### Method 2: Direct Download
+### Method 1: Direct Download
 1. Download `UserAuditReport.ps1` from the repository
 2. Save to your preferred directory
 3. Ensure execution policy allows script execution:
    ```powershell
    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+   .\UserAuditReport.ps1
    ```
 
-### Method 3: Module Dependencies (Optional)
-```powershell
-# Install all optional modules upfront
-Install-Module ImportExcel -Force -AllowClobber
-Install-Module Microsoft.Graph.Authentication -Force
-Install-Module Microsoft.Graph.Users -Force
-Install-Module Microsoft.Graph.DirectoryObjects -Force  
-Install-Module Microsoft.Graph.Identity.DirectoryManagement -Force
+### Method 2: Clone Repository
+```bash
+git clone https://github.com/yourusername/user-audit-report.git
+cd user-audit-report
 ```
 
 ---
@@ -247,22 +238,6 @@ Would you like to connect to Entra ID? (Y/N)
 ```
 WARNING: Graph API modules required for this report are not installed. The report will display on-premises AD Users only.
 If authorized to install modules on this system, would you like to install the required Graph API modules for this script? (Y/N)
-```
-
-### Non-Interactive Execution
-
-For automated scenarios, ensure all required modules are pre-installed:
-
-```powershell
-# Pre-install modules
-Install-Module ImportExcel -Force
-Install-Module Microsoft.Graph.Authentication -Force
-Install-Module Microsoft.Graph.Users -Force
-Install-Module Microsoft.Graph.DirectoryObjects -Force
-Install-Module Microsoft.Graph.Identity.DirectoryManagement -Force
-
-# Run script (will skip interactive prompts for installed modules)
-.\UserAuditReport.ps1
 ```
 
 ### Command Line Examples
