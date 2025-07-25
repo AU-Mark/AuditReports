@@ -477,18 +477,6 @@ Test-ComputerSecureChannel
 - **Firewall Rules**: Ensure PowerShell can reach required endpoints
 - **Proxy Configuration**: Configure proxy settings if required
 
-### Best Practices
-```powershell
-# Secure script execution
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-
-# Verify script integrity before execution
-Get-AuthenticodeSignature .\UserAuditReport.ps1
-
-# Use secure credential storage
-$Credential = Get-Credential
-```
-
 ---
 
 ## 🤝 Contributing
