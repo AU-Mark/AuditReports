@@ -83,7 +83,7 @@ The **User Audit Report Generator** is a comprehensive PowerShell tool designed 
 
 | Component | Requirement | Notes |
 |-----------|-------------|--------|
-| **PowerShell** | 5.1 or later | PowerShell Core (7.x) recommended |
+| **PowerShell** | 5.1 or later | PowerShell 5.1 and 7.x supported |
 | **Operating System** | Windows Server 2012 R2+ | Domain-joined system preferred |
 | **Permissions** | Domain User minimum | Domain Admin for complete analysis |
 | **Memory** | 4GB minimum | 8GB+ recommended for large environments |
